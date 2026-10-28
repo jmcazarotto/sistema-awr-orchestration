@@ -33,13 +33,18 @@ try {
   inicializacao = orchestrator.start();
   await inicializacao;
   if (!encerrando) {
-    server = serve({ fetch: app.fetch, port: config.PORT }, () => {
-      console.log(`AWR Design System API em http://localhost:${config.PORT} · image=${config.IMAGE_ENGINE_MODE} ai=${config.AI_MODE}`);
-    });
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      console.error(error.code === 'EADDRINUSE' ? `Porta ${config.PORT} já está em uso. Encerre o outro processo ou configure PORT.` : 'Não foi possível iniciar o servidor HTTP.');
-      void shutdown(1);
-    });
+    // No `tsx watch` o processo anterior pode ainda segurar a porta por alguns ms: tenta de novo (até ~5 s) antes de desistir.
+    const listen = (tentativa: number) => {
+      server = serve({ fetch: app.fetch, port: config.PORT }, () => {
+        console.log(`AWR Design System API em http://localhost:${config.PORT} · image=${config.IMAGE_ENGINE_MODE} ai=${config.AI_MODE}`);
+      });
+      server.on('error', (error: NodeJS.ErrnoException) => {
+        if (error.code === 'EADDRINUSE' && tentativa < 20 && !encerrando) { setTimeout(() => listen(tentativa + 1), 250); return; }
+        console.error(error.code === 'EADDRINUSE' ? `Porta ${config.PORT} já está em uso. Encerre o outro processo ou configure PORT.` : 'Não foi possível iniciar o servidor HTTP.');
+        void shutdown(1);
+      });
+    };
+    listen(1);
   }
 } catch {
   console.error('Não foi possível iniciar a API AWR. Verifique a configuração e os diretórios.');

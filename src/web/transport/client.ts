@@ -13,7 +13,11 @@ export function createApi(transport: typeof fetch = fetch) {
       });
     } catch { throw new ApiError('Não foi possível conectar à API. Verifique se o servidor está disponível.', 0, 'NETWORK_ERROR'); }
     let json: unknown;
-    try { json = await response.json(); } catch { throw new ApiError('O servidor retornou uma resposta ilegível.', response.status); }
+    try { json = await response.json(); } catch {
+      // Proxy do Vite sem backend (ECONNREFUSED) responde 5xx sem JSON.
+      if (response.status >= 500) throw new ApiError('A API não respondeu (servidor parado ou reiniciando). Confira o terminal do `npm run dev` e tente de novo.', response.status, 'NETWORK_ERROR');
+      throw new ApiError('O servidor retornou uma resposta ilegível.', response.status);
+    }
     if (!response.ok) {
       const error = S.ApiErrorSchema.safeParse(json);
       throw new ApiError(error.success ? error.data.error.message : `Não foi possível concluir a operação (${response.status}).`, response.status, error.success ? error.data.error.code : undefined);
