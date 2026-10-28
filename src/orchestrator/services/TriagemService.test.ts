@@ -89,7 +89,7 @@ describe('TriagemService e integração', () => {
       const body = JSON.parse(init!.body as string);
       expect(body.state).toBe(result.texto); expect(body.model).toBe('jev-latest');
       // empresa citada literalmente → resolvida pelo cadastro, sem pergunta ao classificador
-      expect(Object.keys(body.questions)).toEqual(['procedimento', 'tipo_arte']);
+      expect(Object.keys(body.questions)).toEqual(['procedimento', 'tipo_arte', 'agente']);
       expect(Object.keys(body.questions.procedimento.criteria)).toEqual(['preenchimento_labial', 'botox', 'fios_sustentacao']);
       expect(Object.keys(body.questions.tipo_arte.criteria)).toHaveLength(4);
       expect(f.bus.history(10).map(event => event.type)).toEqual(['triagem.started', 'triagem.result', 'log']);
@@ -117,8 +117,8 @@ describe('TriagemService e integração', () => {
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try {
       expect(await f.app.triar('recebemos uma demanda de cliente da unidade Royal Face Colombo para a criação de antes e depois')).toMatchObject({ agente: 'van_gogh', agenteConfianca: 1, empresa: { nome: 'Royal Face Colombo' } });
-      expect(await f.app.triar('precisamos abastecer o acervo de imagens de Botox')).toMatchObject({ agente: 'monalisa', agenteConfianca: 1 });
-      expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string).questions).not.toHaveProperty('agente');
+      expect(await f.app.triar('precisamos abastecer o acervo de imagens de Botox')).toMatchObject({ agente: 'monalisa', agenteConfianca: 1, agenteRegra: true, probabilidades: { agente: { van_gogh: 0, monalisa: 1 }, procedimento: { botox: 1 } } });
+      expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string).questions).toHaveProperty('agente'); // sempre perguntado, para a distribuição
       expect(await f.app.triar('arte de botox antes e depois')).toMatchObject({ agente: 'monalisa', agenteConfianca: 0.88 });
       expect(Object.keys(JSON.parse(fetcher.mock.calls[2]![1]!.body as string).questions.agente.criteria)).toEqual(['van_gogh', 'monalisa']);
     } finally { await f.close(); }

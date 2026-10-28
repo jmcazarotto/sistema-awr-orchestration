@@ -9,9 +9,11 @@ describe('decidirAgentePorRegra', () => {
     ['recebemos uma demanda de cliente da unidade Royal Face Colombo para a criação de antes e depois', true, 'van_gogh'],
     ['antes e depois de botox para a Royal Face Maringá', true, 'van_gogh'],
     ['o franqueado pediu um post de botox', false, 'van_gogh'],
+    ['A gente precisa abastecer as artes de botox da Royal Face.', true, 'monalisa'],
+    ['abastecer o acervo com artes da Royal Face', true, 'monalisa'],
   ] as const)('%s → %s', (texto, empresa, agente) => expect(decidirAgentePorRegra(texto, empresa)).toMatchObject({ agente, confianca: 1 }));
 
-  it.each([['arte de botox antes e depois', false], ['abastecer o acervo com artes da Royal Face', true]] as const)('sem sinal claro → classificador: %s', (texto, empresa) => {
+  it.each([['arte de botox antes e depois', false], ['o cliente pediu para abastecer o acervo da unidade', true]] as const)('sem sinal claro → classificador: %s', (texto, empresa) => {
     expect(decidirAgentePorRegra(texto, empresa)).toBeNull();
   });
 });

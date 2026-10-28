@@ -105,6 +105,15 @@ export const TriagemSchema = z.object({
   agenteConfianca: z.number().min(0).max(1).default(0),
   /** Por que esse agente (regra aplicada ou classificador). */
   agenteMotivo: z.string().default(''),
+  /** true quando o agente foi decidido por regra (sinal explícito no texto); a distribuição abaixo continua sendo a do classificador. */
+  agenteRegra: z.boolean().default(false),
+  /** Probabilidade de cada opção segundo o classificador (soma ≈ 1 por pergunta). Os campos *Confianca acima são a certeza do modelo na escolha. */
+  probabilidades: z.object({
+    procedimento: z.record(z.string(), z.number().min(0).max(1)),
+    tipoTemplate: z.record(z.string(), z.number().min(0).max(1)),
+    agente: z.record(z.string(), z.number().min(0).max(1)),
+    empresa: z.record(z.string(), z.number().min(0).max(1)).optional(),
+  }).optional(),
   provider: TriagemProviderSchema,
   modelo: z.string().min(1),
   /** Latência REAL da chamada ao classificador (não inclui atrasos cosméticos da UI). */

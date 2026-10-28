@@ -67,7 +67,7 @@ export class FakeOrchestrator implements Orchestrator {
   });
   readonly triar = vi.fn(async (texto: string): Promise<Triagem> => ({
     id: 'TRI-test', texto, empresa: { id: null, nome: null, cadastrada: false, confianca: 0, rede: null, unidade: null, metodo: 'nenhum' },
-    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste',
+    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste', agenteRegra: true,
     provider: 'mock', modelo: 'heuristica', latenciaMs: 1, tokens: { entrada: 0, saida: 0 }, custo: { usd: 0, brl: 0, cotacaoUsdBrl: 5.5 }, criadoEm: agora,
   }));
   readonly humanReview = vi.fn(async (id: string, feedback: FeedbackHumano): Promise<Demanda> => {

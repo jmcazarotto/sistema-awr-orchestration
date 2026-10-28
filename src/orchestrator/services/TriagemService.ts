@@ -49,7 +49,11 @@ function empresaPorExtracao(texto: string): Empresa {
   return { id: null, nome, cadastrada: false, confianca: nome ? 0.5 : 0, rede: null, unidade: null, metodo: nome ? 'extracao' : 'nenhum' };
 }
 
-const porRegra = (d: { agente: Triagem['agente']; confianca: number; motivo: string }) => ({ agente: d.agente, agenteConfianca: d.confianca, agenteMotivo: d.motivo });
+const porRegra = (d: { agente: Triagem['agente']; confianca: number; motivo: string }) => ({ agente: d.agente, agenteConfianca: d.confianca, agenteMotivo: d.motivo, agenteRegra: d.confianca === 1 });
+/** Distribuição heurística (modo mock): a escolha recebe `p`, o restante é dividido igualmente. */
+function distribuicao<K extends string>(keys: readonly K[], escolha: K, p: number): Record<string, number> {
+  return Object.fromEntries(keys.map(k => [k, k === escolha ? p : (1 - p) / (keys.length - 1)]));
+}
 
 export class TriagemService {
   constructor(private readonly config: OrchestratorConfig, private readonly bus: Pick<EventBus, 'emit' | 'log' | 'clock'>, private readonly jev?: JevClient) {}
@@ -61,7 +65,7 @@ export class TriagemService {
     const modelo = real ? this.config.JEV_MODEL : 'heuristica';
     this.bus.emit({ type: 'triagem.started', payload: { triagemId: id, texto, provider, modelo } });
     const clientes = await new ClientesRegistry(this.config.BRAIN_DIR).list();
-    let fields: Pick<Triagem, 'empresa' | 'procedimento' | 'procedimentoConfianca' | 'tipoTemplate' | 'tipoTemplateConfianca' | 'agente' | 'agenteConfianca' | 'agenteMotivo' | 'tokens' | 'latenciaMs' | 'modelo'>;
+    let fields: Pick<Triagem, 'empresa' | 'procedimento' | 'procedimentoConfianca' | 'tipoTemplate' | 'tipoTemplateConfianca' | 'agente' | 'agenteConfianca' | 'agenteMotivo' | 'agenteRegra' | 'probabilidades' | 'tokens' | 'latenciaMs' | 'modelo'>;
     if (real && this.jev) {
       const porCadastro = empresaPorCadastro(texto, clientes);
       const agentePorRegra = decidirAgentePorRegra(texto, Boolean(porCadastro));
@@ -69,7 +73,8 @@ export class TriagemService {
         procedimento: { type: 'choice', instructions: 'Qual procedimento estético é solicitado no texto?', criteria: procedimentos },
         ...(porCadastro ? {} : { empresa: { type: 'choice' as const, instructions: 'Para qual rede/franquia de clínicas é a arte? Considere variações de grafia do nome. Se o texto não cita nenhuma rede cadastrada, escolha nao_identificada. Não associe uma clínica desconhecida a uma cadastrada.', criteria: { ...Object.fromEntries(clientes.map(cliente => [cliente.id, `${cliente.nome}${cliente.tipo === 'franquia' ? ' (franquia)' : ''}; nomes conhecidos: ${[cliente.nome, ...cliente.aliases].join(', ')}${cliente.unidades.length ? `; unidades: ${cliente.unidades.map(u => u.cidade).join(', ')}` : ''}`])), nao_identificada: 'Empresa não citada ou não cadastrada entre as opções.' } } }),
         tipo_arte: { type: 'choice', instructions: 'Qual layout de arte foi solicitado? Use a orientação descrita; para antes e depois sem orientação use lado a lado. Post institucional usa foto em cima e painel embaixo.', criteria: templates },
-        ...(agentePorRegra ? {} : { agente: { type: 'choice' as const, instructions: 'Qual agente de arte deve produzir? Demanda pedida por cliente/clínica/unidade vai para van_gogh; abastecimento rotineiro do acervo interno, sem cliente, vai para monalisa.', criteria: criteriosAgente } }),
+        // Sempre perguntado (mesmo com regra) para exibir a distribuição completa na UI.
+        agente: { type: 'choice', instructions: 'Qual agente de arte deve produzir? Pedido pontual de cliente/clínica/unidade vai para van_gogh; abastecimento rotineiro do acervo (peças de estoque), mesmo citando a rede, vai para monalisa.', criteria: criteriosAgente },
       };
       const response = await this.jev.ask(texto, questions);
       const { procedimento, empresa, tipo_arte, agente } = response.answers;
@@ -81,7 +86,8 @@ export class TriagemService {
           : empresaPorExtracao(texto)),
         procedimento: ProcedimentoSchema.parse(procedimento!.choice), procedimentoConfianca: procedimento!.confidence,
         tipoTemplate: TipoTemplateSchema.parse(tipo_arte!.choice), tipoTemplateConfianca: tipo_arte!.confidence,
-        ...(agentePorRegra ? porRegra(agentePorRegra) : { agente: CriadorIdSchema.parse(agente!.choice), agenteConfianca: agente!.confidence, agenteMotivo: 'Decidido pelo classificador (texto sem sinal claro de cliente ou de acervo).' }),
+        ...(agentePorRegra ? porRegra(agentePorRegra) : { agente: CriadorIdSchema.parse(agente!.choice), agenteConfianca: agente!.confidence, agenteMotivo: 'Decidido pelo classificador (texto sem sinal claro de cliente ou de acervo).', agenteRegra: false }),
+        probabilidades: { procedimento: procedimento!.probabilities, tipoTemplate: tipo_arte!.probabilities, agente: agente!.probabilities, ...(empresa ? { empresa: empresa.probabilities } : {}) },
         tokens: { entrada: response.usage.input_tokens, saida: response.usage.output_tokens }, latenciaMs: response.latenciaMs, modelo: response.model,
       };
     } else {
@@ -90,7 +96,8 @@ export class TriagemService {
       const mock = classifyMock({ briefing: texto });
       const empresaMock = empresaPorCadastro(texto, clientes) ?? empresaPorExtracao(texto);
       const agenteMock = decidirAgentePorRegra(texto, empresaMock.cadastrada) ?? { agente: 'van_gogh' as const, confianca: 0.5, motivo: 'Sem sinal claro: padrão demanda de cliente.' };
-      fields = { empresa: empresaMock, ...porRegra(agenteMock), procedimento: mock.procedimento, procedimentoConfianca: mock.confianca, tipoTemplate: mock.tipoTemplate, tipoTemplateConfianca: mock.confianca, tokens: { entrada: 0, saida: 0 }, latenciaMs: performance.now() - start, modelo };
+      const probabilidades = { procedimento: distribuicao(Object.keys(procedimentos) as (keyof typeof procedimentos)[], mock.procedimento, mock.confianca), tipoTemplate: distribuicao(Object.keys(templates) as (keyof typeof templates)[], mock.tipoTemplate, mock.confianca), agente: distribuicao(['van_gogh', 'monalisa'] as const, agenteMock.agente, agenteMock.confianca) };
+      fields = { empresa: empresaMock, ...porRegra(agenteMock), probabilidades, procedimento: mock.procedimento, procedimentoConfianca: mock.confianca, tipoTemplate: mock.tipoTemplate, tipoTemplateConfianca: mock.confianca, tokens: { entrada: 0, saida: 0 }, latenciaMs: performance.now() - start, modelo };
     }
     const usd = (fields.tokens.entrada * this.config.JEV_PRICE_INPUT_USD_PER_MTOK + fields.tokens.saida * this.config.JEV_PRICE_OUTPUT_USD_PER_MTOK) / 1e6;
     const triagem = TriagemSchema.parse({ id, texto, ...fields, familiaArte: fields.tipoTemplate.startsWith('antes_depois') ? 'antes_depois' : 'banco_imagem', provider, custo: { usd, brl: usd * this.config.USD_BRL, cotacaoUsdBrl: this.config.USD_BRL }, criadoEm: this.bus.clock.now().toISOString() });
