@@ -1,0 +1,49 @@
+{
+  "name": "awr-design-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "AWR Digital — Módulo de Design Autônomo (Fase 1): orquestração multi-agente de artes por template",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n server,web -c green,blue \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx watch --clear-screen=false src/server/index.ts",
+    "dev:web": "vite",
+    "build": "vite build",
+    "start": "tsx src/server/index.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "tunnel": "cloudflared tunnel --url http://localhost:8787",
+    "acervo:reset": "tsx scripts/acervo-reset.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.5",
+    "chokidar": "^6.0.0",
+    "dotenv": "^18.0.9",
+    "hono": "^4.13.14",
+    "nanoid": "^6.0.2",
+    "openai": "^7.45.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "sharp": "^0.35.5",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "concurrently": "^10.0.6",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  }
+}

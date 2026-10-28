@@ -1,0 +1,40 @@
+# AWR Design System — Cloudflare
+# Fase 1: roda local (Node) e é exposto via Cloudflare Tunnel:  npm run tunnel
+# Fase 2: o orquestrador migra para Workers + Durable Objects (1 DO por ator),
+#         acervo → R2, estado → D1. Os bindings abaixo ficam comentados até lá.
+
+name = "awr-design-system"
+main = "src/server/worker.ts"          # entrypoint Workers (Fase 2)
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Front-end (Cloudflare Pages / Workers Static Assets)
+[assets]
+directory = "./dist/web"
+not_found_handling = "single-page-application"
+
+[vars]
+IMAGE_ENGINE_MODE = "mock"
+AI_MODE = "mock"
+MAX_HOPS = "5"
+MAX_DIRECTOR_ATTEMPTS = "3"
+
+# ── Fase 2 ────────────────────────────────────────────
+# [[durable_objects.bindings]]
+# name = "ACTOR"
+# class_name = "ActorDurableObject"
+#
+# [[migrations]]
+# tag = "v1"
+# new_sqlite_classes = ["ActorDurableObject"]
+#
+# [[r2_buckets]]
+# binding = "ACERVO"
+# bucket_name = "awr-acervo"
+#
+# [[d1_databases]]
+# binding = "DB"
+# database_name = "awr-design-system"
+# database_id = "<preencher>"
+#
+# Secrets (wrangler secret put): OPENAI_API_KEY, JEV_API_KEY

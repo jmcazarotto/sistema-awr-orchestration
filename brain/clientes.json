@@ -1,0 +1,12 @@
+[
+  {
+    "id": "royal_face",
+    "nome": "Royal Face",
+    "tipo": "franquia",
+    "aliases": ["Royal Face", "RoyalFace"],
+    "unidades": [
+      { "id": "royal_face_castanhal", "nome": "Royal Face Castanhal", "cidade": "Castanhal", "uf": "PA", "aliases": [] },
+      { "id": "royal_face_maringa", "nome": "Royal Face Maringá", "cidade": "Maringá", "uf": "PR", "aliases": [] }
+    ]
+  }
+]
