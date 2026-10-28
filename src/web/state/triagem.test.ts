@@ -7,7 +7,7 @@ import { describeActor, describeMessage, describeSaved, describeTriagem } from '
 import { createMockApi, seedDemand } from '../dev/mockApi';
 import { createApi } from '../transport/client';
 
-const triagem: Triagem = {id:'tri-1',texto:'Botox para Royal Face',empresa:{id:'royal_face_castanhal',nome:'Royal Face Castanhal',cadastrada:true,confianca:1,rede:{id:'royal_face',nome:'Royal Face'},unidade:{id:'royal_face_castanhal',nome:'Castanhal',cadastrada:true},metodo:'cadastro'},procedimento:'botox',procedimentoConfianca:.97,tipoTemplate:'antes_depois_1',familiaArte:'antes_depois',tipoTemplateConfianca:.96,provider:'jev',modelo:'jev-latest',latenciaMs:276,tokens:{entrada:400,saida:50},custo:{usd:.0000189,brl:.00010395,cotacaoUsdBrl:5.5},criadoEm:'2026-10-28T12:00:00Z'};
+const triagem: Triagem = {id:'tri-1',texto:'Botox para Royal Face',empresa:{id:'royal_face_castanhal',nome:'Royal Face Castanhal',cadastrada:true,confianca:1,rede:{id:'royal_face',nome:'Royal Face'},unidade:{id:'royal_face_castanhal',nome:'Castanhal',cadastrada:true},metodo:'cadastro'},procedimento:'botox',procedimentoConfianca:.97,tipoTemplate:'antes_depois_1',familiaArte:'antes_depois',tipoTemplateConfianca:.96,agente:'van_gogh',agenteConfianca:1,agenteMotivo:'Demanda de cliente (empresa citada) → Van Gogh.',provider:'jev',modelo:'jev-latest',latenciaMs:276,tokens:{entrada:400,saida:50},custo:{usd:.0000189,brl:.00010395,cotacaoUsdBrl:5.5},criadoEm:'2026-10-28T12:00:00Z'};
 const envelope = (event:SseEvent,id='event-1') => SseEnvelopeSchema.parse({...event,id,ts:triagem.criadoEm});
 afterEach(()=>vi.useRealTimers());
 describe('formatadores pt-BR',()=>{

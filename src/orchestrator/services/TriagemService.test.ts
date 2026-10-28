@@ -16,6 +16,7 @@ export function jevResponse(empresa = 'royal_face', confidence = 0.9) {
     procedimento: answer('botox', ['botox', 'preenchimento_labial', 'fios_sustentacao']),
     empresa: answer(empresa, ['royal_face', 'nao_identificada'], confidence),
     tipo_arte: answer('antes_depois_1', ['antes_depois_1', 'antes_depois_2', 'banco_imagem_1', 'banco_imagem_2'], 0.8),
+    agente: answer('van_gogh', ['van_gogh', 'monalisa']),
   }, usage: { input_tokens: 1000, output_tokens: 50 } };
 }
 const config = OrchestratorConfigSchema.parse({ CLASSIFIER_PROVIDER: 'jev', JEV_BASE_URL: 'https://example.test/', JEV_MODEL: 'jev-request' });
@@ -108,6 +109,18 @@ describe('TriagemService e integração', () => {
       expect((await f.app.triar('arte de botox para Royal Face Maringá antes e depois')).empresa).toEqual({ id: 'royal_face_maringa', nome: 'Royal Face Maringá', cadastrada: true, confianca: 1, metodo: 'cadastro', rede: { id: 'royal_face', nome: 'Royal Face' }, unidade: { id: 'royal_face_maringa', nome: 'Maringá', cadastrada: true } });
       expect((await f.app.triar('botox para Royal Face Londrina antes e depois')).empresa).toMatchObject({ id: 'royal_face', nome: 'Royal Face Londrina', cadastrada: true, confianca: 1, unidade: { id: null, nome: 'Londrina', cadastrada: false } });
       expect(JSON.parse(fetcher.mock.calls[0]![1]!.body as string).questions).not.toHaveProperty('empresa');
+    } finally { await f.close(); }
+  });
+  it('roteia o agente: cliente → Van Gogh por regra, acervo → Monalisa por regra, ambíguo → classificador', async () => {
+    const withAgente = (agente: string) => { const body = jevResponse(); return { ...body, answers: { ...body.answers, agente: answer(agente, ['van_gogh', 'monalisa'], 0.88) } }; };
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(withAgente('monalisa')));
+    const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
+    try {
+      expect(await f.app.triar('recebemos uma demanda de cliente da unidade Royal Face Colombo para a criação de antes e depois')).toMatchObject({ agente: 'van_gogh', agenteConfianca: 1, empresa: { nome: 'Royal Face Colombo' } });
+      expect(await f.app.triar('precisamos abastecer o acervo de imagens de Botox')).toMatchObject({ agente: 'monalisa', agenteConfianca: 1 });
+      expect(JSON.parse(fetcher.mock.calls[1]![1]!.body as string).questions).not.toHaveProperty('agente');
+      expect(await f.app.triar('arte de botox antes e depois')).toMatchObject({ agente: 'monalisa', agenteConfianca: 0.88 });
+      expect(Object.keys(JSON.parse(fetcher.mock.calls[2]![1]!.body as string).questions.agente.criteria)).toEqual(['van_gogh', 'monalisa']);
     } finally { await f.close(); }
   });
   it('sem citação literal, pergunta a rede ao classificador e aceita só com confiança ≥ 0,7', async () => {

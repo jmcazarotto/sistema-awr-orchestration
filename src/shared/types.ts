@@ -100,6 +100,11 @@ export const TriagemSchema = z.object({
   tipoTemplate: TipoTemplateSchema,
   familiaArte: FamiliaArteSchema,
   tipoTemplateConfianca: z.number().min(0).max(1),
+  /** Agente de arte: van_gogh = demanda de cliente/unidade · monalisa = abastecimento rotineiro do acervo. */
+  agente: CriadorIdSchema.default('van_gogh'),
+  agenteConfianca: z.number().min(0).max(1).default(0),
+  /** Por que esse agente (regra aplicada ou classificador). */
+  agenteMotivo: z.string().default(''),
   provider: TriagemProviderSchema,
   modelo: z.string().min(1),
   /** Latência REAL da chamada ao classificador (não inclui atrasos cosméticos da UI). */

@@ -33,7 +33,7 @@ export class ArtDirector {
       this.bus.log('info', 'Triagem com baixa confiança revisada pelo Diretor', demanda.id, 'art_director');
     }
     await this.brain.loadSkill(classificacao.procedimento);
-    demanda = await this.bus.update(demanda.id, demand => { demand.classificacao = { ...classificacao, agenteDesignado: 'van_gogh' }; demand.criadorAtual = 'van_gogh'; }, 'EM_PRODUCAO', undefined, message.id);
+    demanda = await this.bus.update(demanda.id, demand => { demand.classificacao = classificacao; demand.criadorAtual = classificacao.agenteDesignado; if (classificacao.agenteDesignado === 'monalisa') demand.origem = 'acervo'; }, 'EM_PRODUCAO', undefined, message.id);
     await this.produce(demanda, message.id);
   }
   private async produce(demanda: Demanda, causationId?: string): Promise<void> {

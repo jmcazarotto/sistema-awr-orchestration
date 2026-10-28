@@ -1,5 +1,6 @@
 import { ClassificacaoSchema } from '../../shared/types';
 import type { Classificacao, OrchestratorConfig, Procedimento, SubmitDemandInput, TipoTemplate } from '../../shared/types';
+import { decidirAgentePorRegra } from './agenteRouting';
 import type { TriagemService } from './TriagemService';
 import type { AiClient } from './AiClient';
 
@@ -10,9 +11,9 @@ export class FastClassifier {
       if (!this.triagem) return classifyMock(input);
       const result = await this.triagem.triar(input.briefing);
       const procedimento = input.procedimento ?? result.procedimento;
-      const confidences = [!input.procedimento ? result.procedimentoConfianca : 1, !input.tipoTemplate ? result.tipoTemplateConfianca : 1];
+      const confidences = [!input.procedimento ? result.procedimentoConfianca : 1, !input.tipoTemplate ? result.tipoTemplateConfianca : 1, result.agenteConfianca];
       if (!input.clinicaNome && result.empresa.nome) { input.clinicaNome = result.empresa.nome; confidences.push(result.empresa.confianca); }
-      return ClassificacaoSchema.parse({ procedimento, tipoTemplate: input.tipoTemplate ?? result.tipoTemplate, agenteDesignado: 'van_gogh', skillFile: `skills/${procedimento}.skill.md`, confianca: Math.min(...confidences) });
+      return ClassificacaoSchema.parse({ procedimento, tipoTemplate: input.tipoTemplate ?? result.tipoTemplate, agenteDesignado: result.agente, skillFile: `skills/${procedimento}.skill.md`, confianca: Math.min(...confidences) });
     }
     if (this.config.AI_MODE === 'openai' && this.ai) {
       const classification = await this.ai.json(this.config.CLASSIFIER_MODEL, ClassificacaoSchema,
@@ -29,5 +30,5 @@ export function classifyMock(input: SubmitDemandInput): Classificacao {
     const found = matches.find(([, regex]) => regex.test(text));
     const procedimento = input.procedimento ?? found?.[0] ?? 'preenchimento_labial';
     const tipoTemplate: TipoTemplate = input.tipoTemplate ?? (/empilhad|horizontal.*antes|antes.*cima|antes_depois_2/.test(text) ? 'antes_depois_2' : /antes|depois|comparativ/.test(text) ? 'antes_depois_1' : /institucional|painel|banco_imagem_2/.test(text) ? 'banco_imagem_2' : 'banco_imagem_1');
-    return ClassificacaoSchema.parse({ procedimento, tipoTemplate, agenteDesignado: 'van_gogh', skillFile: `skills/${procedimento}.skill.md`, confianca: input.procedimento || found ? 0.95 : 0.55 });
+    return ClassificacaoSchema.parse({ procedimento, tipoTemplate, agenteDesignado: decidirAgentePorRegra(input.briefing, Boolean(input.clinicaNome))?.agente ?? 'van_gogh', skillFile: `skills/${procedimento}.skill.md`, confianca: input.procedimento || found ? 0.95 : 0.55 });
 }

@@ -224,3 +224,14 @@ Ordem de resolução (`EmpresaMatcher.ts` → `TriagemService.ts`):
 3. **Extração (`metodo: extracao`, confiança 0,5):** nome próprio não cadastrado, exibido como "não cadastrada".
 
 Nunca associar uma unidade não citada a outra cadastrada (ex.: "Royal Face Maringá" jamais vira "Royal Face Castanhal").
+
+## 9. Roteamento do Agente de Arte na Triagem
+
+A triagem também decide **quem produz** (`agente` → `classificacao.agenteDesignado`, respeitado pelo Diretor ao despachar):
+
+| Agente | Quando | Exemplo |
+|---|---|---|
+| `van_gogh` | Demanda de **cliente** (clínica, unidade, franqueado) | "recebemos uma demanda de cliente da unidade Royal Face Colombo…" |
+| `monalisa` | **Abastecimento rotineiro do acervo** (peças genéricas, sem cliente) | "precisamos abastecer o acervo de imagens de Botox" |
+
+Regra (`agenteRouting.ts`, confiança 1): só sinal de acervo (`acervo`, `abastecer`, `repor`, `completar a grade`…) → Monalisa; só sinal de cliente (empresa citada, `cliente`, `unidade`, `franqueado`…) → Van Gogh. Ambos ou nenhum → o Jev decide (pergunta `agente`).
