@@ -40,5 +40,5 @@ export function describeActor(actor: {status: ActorStatus; demandaId: string | n
   const detail = demand?.classificacao ? ` · ${PROCEDIMENTO_LABELS[demand.classificacao.procedimento]} · ${demand.classificacao.tipoTemplate}` : '';
   return actor.status === 'generating' ? `Gerando v${(demand?.versaoAtual ?? 0)+1} de ${id}${detail}` : `Analisando ${id}${detail}`;
 }
-export const describeTriagem = (t: Triagem) => `Triagem Jev: ${t.empresa.nome ?? 'Empresa não identificada'} · ${PROCEDIMENTO_LABELS[t.procedimento]} · ${t.tipoTemplate} · ${names[t.agente]} · ${formatLatencia(t.latenciaMs)} · ${formatCusto(t.custo)}`;
+export const describeTriagem = (t: Triagem) => `Classificação/triagem: ${t.empresa.nome ?? 'Empresa não identificada'} · ${PROCEDIMENTO_LABELS[t.procedimento]} · ${t.tipoTemplate} · ${names[t.agente]} · ${formatLatencia(t.latenciaMs)} · ${formatCusto(t.custo)}`;
 export const describeSaved = (d: Demanda) => d.estado === 'APROVADA_SALVA_NO_ACERVO' && d.finalPath ? {text:`Arte salva no acervo · ${d.id}`,url:imageUrl(d.finalPath)} : null;
