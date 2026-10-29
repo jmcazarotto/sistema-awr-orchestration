@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IA_EFFORT_LABELS, IA_SITUACOES, IA_SITUACAO_INFO, iaModelo, iaModeloLabel } from '../../shared/types';
 import type { IaEffort, IaModelos, IaProvedor, IaSituacao, IaUsoResponse } from '../../shared/types';
 import { useRuntime } from '../state/context';
@@ -21,19 +21,19 @@ export function SettingsPage() {
   </>;
 }
 
-const PROVEDOR_LABEL: Record<IaProvedor, string> = { jev: 'Jev · TypeSafe AI', openai_decisions: 'Decisions API · OpenAI', openai: 'OpenAI' };
+const PROVEDOR_LABEL: Record<IaProvedor, string> = { jev: 'Jev · TypeSafe AI', openai_decisions: 'Decisions API · OpenAI', openai: 'OpenAI', local: 'Simulado (local)' };
 const inteiro = (n: number) => n.toLocaleString('pt-BR');
 
 function CustosPanel() {
   const { api } = useRuntime(); const notify = useToast();
   const { data, error, loading, reload, setData } = useLoad(() => api.iaUso(), [api]);
   const [zerando, setZerando] = useState(false);
+  const [confirmando, setConfirmando] = useState(false);
   // Atualiza sozinho enquanto a aba está aberta (triagens novas entram no total).
   useEffect(() => { const timer = setInterval(() => void api.iaUso().then(setData, () => undefined), 10000); return () => clearInterval(timer); }, [api, setData]);
   const zerar = async () => {
-    if (!confirm('Zerar o contador de chamadas e custos das integrações?')) return;
     setZerando(true);
-    try { setData(await api.zerarIaUso()); notify('Contador de custos zerado.'); } catch (e) { notify(errorMessage(e), true); } finally { setZerando(false); }
+    try { setData(await api.zerarIaUso()); setConfirmando(false); notify('Contador de custos zerado.'); } catch (e) { notify(errorMessage(e), true); } finally { setZerando(false); }
   };
   if (error) return <div className="error-banner" role="alert"><span>{error}</span><button className="button outline" onClick={reload}>Tentar novamente</button></div>;
   if (loading && !data) return <section className="card loading-state" role="status"><span className="loader" /><h2>Carregando custos…</h2></section>;
@@ -44,26 +44,59 @@ function CustosPanel() {
       <article className="card stat"><div className="stat-icon"><Icon name="code" /></div><div><span className="muted">Custo total em dólar</span><strong>{formatUsd(data.total.usd)}</strong><span className="stat-caption">modelos com preço configurado</span></div></article>
       <article className="card stat"><div className="stat-icon"><Icon name="check" /></div><div><span className="muted">Custo total em real</span><strong>{formatBrl(data.total.brl)}</strong><span className="stat-caption">cotação US$ 1 = {formatBrl(data.cotacaoUsdBrl)}</span></div></article>
     </div>
-    <section className="card">
-      <div className="section-heading"><div><h2>Custos por integração</h2><p className="muted">Só chamadas reais entram aqui (modo de demonstração/heurística não gera custo).</p></div><button className="button outline" onClick={() => void zerar()} disabled={zerando || data.total.chamadas === 0}><Icon name="undo" />Zerar contador</button></div>
-      <div className="table-wrap"><table className="cost-table">
-        <thead><tr><th>Integração</th><th>Modelo</th><th>Chamadas</th><th>Tokens (entrada / saída)</th><th>Custo em dólar</th><th>Custo em real</th></tr></thead>
-        <tbody>{data.itens.map(item => <CustoRow key={`${item.provedor}:${item.modelo}`} item={item} />)}</tbody>
-        <tfoot><tr><th colSpan={2}>Total</th><td>{inteiro(data.total.chamadas)}</td><td /><td><strong>{formatUsd(data.total.usd)}</strong></td><td><strong>{formatBrl(data.total.brl)}</strong></td></tr></tfoot>
-      </table></div>
-      <p className="muted cost-note">Custo em real = custo em dólar × {data.cotacaoUsdBrl.toLocaleString('pt-BR')} (variável <code>USD_BRL</code> do .env). Preços por 1M de tokens: Jev US$ 0,042 de entrada; Luna (Decisions API) US$ 0,10 de entrada; saída gratuita nos dois.</p>
-    </section>
+    <div className="cost-overview-heading"><div><h2>Custos por integração</h2><p className="muted">Chamadas reais registradas por categoria.</p></div></div>
+    <div className="cost-sections">
+      <CustoSecao titulo="Classificadora" descricao="Triagem e outras chamadas de texto" itens={data.itens.filter(item => item.tipo === 'texto')} />
+      <CustoSecao titulo="Geração de imagem" descricao="Modelos usados para criar artes" itens={data.itens.filter(item => item.tipo === 'imagem')} imagem />
+    </div>
+    <p className="muted cost-note">Apenas chamadas reais são contabilizadas. Custo em real = custo em dólar × {data.cotacaoUsdBrl.toLocaleString('pt-BR')} (variável <code>USD_BRL</code> do .env). Preços por 1M de tokens: Jev US$ 0,042 de entrada; Luna (Decisions API) US$ 0,10 de entrada; saída gratuita nos dois. Modelos de imagem: texto de entrada US$ 5, imagem de entrada US$ 8 e imagem gerada US$ 30.</p>
+    <div className="cost-reset"><button className="button outline" onClick={() => setConfirmando(true)} disabled={zerando || data.total.chamadas === 0}><Icon name="undo" />Zerar contador</button></div>
+    {confirmando && <ZerarCustosModal busy={zerando} onClose={() => setConfirmando(false)} onConfirm={() => void zerar()} />}
   </>;
 }
 
-function CustoRow({ item }: { item: IaUsoResponse['itens'][number] }) {
+function ZerarCustosModal({ busy, onClose, onConfirm }: { busy: boolean; onClose: () => void; onConfirm: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    const previous = document.activeElement as HTMLElement | null;
+    element?.showModal();
+    return () => { element?.close(); previous?.focus(); };
+  }, []);
+  return <dialog ref={dialog} className="feedback-modal" aria-labelledby="zerar-custos-title" aria-describedby="zerar-custos-description" onCancel={event => { event.preventDefault(); if (!busy) onClose(); }}>
+    <div className="section-heading"><h2 id="zerar-custos-title">Zerar contador de custos?</h2><button className="icon-button" type="button" aria-label="Fechar janela" disabled={busy} onClick={onClose}><Icon name="close" /></button></div>
+    <p id="zerar-custos-description" className="muted">As chamadas e os custos registrados para todas as integrações serão zerados. Esta ação não pode ser desfeita.</p>
+    <div className="form-footer"><button type="button" className="button outline" autoFocus disabled={busy} onClick={onClose}>Cancelar</button><button type="button" className="button primary" disabled={busy} onClick={onConfirm}>{busy ? 'Zerando…' : 'Zerar contador'}</button></div>
+  </dialog>;
+}
+
+function CustoSecao({ titulo, descricao, itens, imagem = false }: { titulo: string; descricao: string; itens: IaUsoResponse['itens']; imagem?: boolean }) {
+  const total = itens.reduce((acc, item) => ({ chamadas: acc.chamadas + item.chamadas, usd: acc.usd + item.usd, brl: acc.brl + item.brl }), { chamadas: 0, usd: 0, brl: 0 });
+  const custoParcial = itens.some(item => item.chamadas > 0 && !item.precificado);
+  return <section className="card cost-section">
+    <div className="cost-section-heading"><div className="cost-section-icon"><Icon name={imagem ? 'image' : 'activity'} /></div><div><h3>{titulo}</h3><p className="muted">{descricao}</p></div></div>
+    <div className="cost-metrics">
+      <div><span>Chamadas</span><strong>{inteiro(total.chamadas)}</strong></div>
+      <div><span>Custo em dólar</span><strong>{formatUsd(total.usd)}</strong></div>
+      <div><span>Custo em real</span><strong>{formatBrl(total.brl)}</strong></div>
+    </div>
+    {custoParcial && <p className="muted">O total inclui apenas modelos com preço configurado.</p>}
+    <div className="cost-detail-title">Detalhamento por modelo</div>
+    <div className="table-wrap"><table className="cost-table">
+      <thead><tr><th>Modelo / integração</th><th>Chamadas</th><th>Tokens (entrada / saída)</th><th>Custo</th>{imagem && <th>Média por imagem</th>}</tr></thead>
+      <tbody>{itens.map(item => <CustoRow key={`${item.provedor}:${item.modelo}`} item={item} imagem={imagem} />)}</tbody>
+    </table></div>
+  </section>;
+}
+
+function CustoRow({ item, imagem }: { item: IaUsoResponse['itens'][number]; imagem: boolean }) {
+  const local = item.provedor === 'local';
   return <tr>
-    <td><strong>{PROVEDOR_LABEL[item.provedor]}</strong></td>
-    <td>{iaModeloLabel(item.modelo)} <span className="muted">· {item.modelo}</span></td>
+    <td><strong>{iaModeloLabel(item.modelo)}</strong><span className="cost-provider">{PROVEDOR_LABEL[item.provedor]} · {item.modelo}</span></td>
     <td>{inteiro(item.chamadas)}</td>
     <td>{inteiro(item.tokensEntrada)} / {inteiro(item.tokensSaida)}</td>
-    <td>{item.precificado ? formatUsd(item.usd) : <Badge>Preço não configurado</Badge>}</td>
-    <td>{item.precificado ? formatBrl(item.brl) : '—'}</td>
+    <td>{local ? 'sem custo' : item.precificado ? <>{formatUsd(item.usd)}<span className="cost-provider">{formatBrl(item.brl)}</span></> : <Badge>Preço não configurado</Badge>}</td>
+    {imagem && <td>{!local && item.precificado && item.chamadas > 0 ? <>{formatUsd(item.usd / item.chamadas)}<span className="cost-provider">{formatBrl(item.brl / item.chamadas)}</span></> : '—'}</td>}
   </tr>;
 }
 
@@ -98,14 +131,14 @@ function ModelosPanel() {
           <div className="model-info"><strong>{info.label}</strong><p className="muted">{info.descricao}</p></div>
           <label><span className="sr-only">Modelo · {info.label}</span>
             <select value={escolha.modelo} onChange={e => setModelo(s, e.target.value)} disabled={info.modelos.length === 1}>
-              {info.modelos.map(id => { const m = iaModelo(id)!; return <option key={id} value={id}>{m.nome} {m.versao}</option>; })}
+              {info.modelos.map(id => { const m = iaModelo(id)!; return <option key={id} value={id}>{iaModeloLabel(m.id)}</option>; })}
             </select>
             <small className="muted">{catalogo?.descricao}</small>
           </label>
           <label><span className="sr-only">Esforço · {info.label}</span>
             {efforts.length ? <select value={escolha.effort ?? ''} onChange={e => setDraft({ ...draft, [s]: { ...escolha, effort: e.target.value as IaEffort } })}>
-              {efforts.map(effort => <option key={effort} value={effort}>{catalogo?.id === 'gpt-image-2' ? `Qualidade ${IA_EFFORT_LABELS[effort].toLowerCase()}` : `Esforço ${IA_EFFORT_LABELS[effort].toLowerCase()}`}</option>)}
-            </select> : <select disabled value=""><option value="">Esforço não se aplica</option></select>}
+              {efforts.map(effort => <option key={effort} value={effort}>{catalogo?.tipo === 'imagem' ? `Qualidade ${IA_EFFORT_LABELS[effort].toLowerCase()}` : `Esforço ${IA_EFFORT_LABELS[effort].toLowerCase()}`}</option>)}
+            </select> : <select disabled value=""><option value="">{catalogo?.tipo === 'imagem' ? 'Qualidade não se aplica' : 'Esforço não se aplica'}</option></select>}
           </label>
         </div>;
       })}
