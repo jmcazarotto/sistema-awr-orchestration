@@ -5,12 +5,12 @@ export class ApiError extends Error {
   constructor(message: string, public status: number, public code = 'INVALID_RESPONSE') { super(message); }
 }
 export function createApi(transport: typeof fetch = fetch) {
-  async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown): Promise<T> {
+  async function request<T>(path: string, schema: z.ZodType<T>, body?: unknown, method: 'POST' | 'PUT' = 'POST'): Promise<T> {
     let response: Response;
     try {
-      response = await transport(`/api${path}`, body === undefined ? {} : {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      });
+      response = await transport(`/api${path}`, body === undefined ? {} : body instanceof FormData
+        ? { method, body }
+        : { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     } catch { throw new ApiError('Não foi possível conectar à API. Verifique se o servidor está disponível.', 0, 'NETWORK_ERROR'); }
     let json: unknown;
     try { json = await response.json(); } catch {
@@ -39,6 +39,13 @@ export function createApi(transport: typeof fetch = fetch) {
     skills: () => request('/brain/skills', S.ListSkillsResponseSchema),
     skill: (id: S.SkillId) => request(`/brain/skills/${S.SkillIdSchema.parse(id)}`, S.GetSkillResponseSchema),
     config: () => request('/config', S.GetConfigResponseSchema),
+    empresas: () => request('/empresas', S.ListEmpresasResponseSchema),
+    empresa: (id: string) => request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}`, S.EmpresaResponseSchema),
+    saveEmpresa: (input: S.EmpresaInput) => request('/empresas', S.EmpresaResponseSchema, S.EmpresaInputSchema.parse(input)),
+    uploadLogo: (id: string, arquivo: File | Blob) => { const form = new FormData(); form.append('arquivo', arquivo); return request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}/logo`, S.EmpresaResponseSchema, form); },
+    templates: (query: S.TemplatesQuery = {}) => { const params = new URLSearchParams(Object.entries(S.TemplatesQuerySchema.parse(query)).filter((e): e is [string, string] => typeof e[1] === 'string')).toString(); return request(`/templates${params ? `?${params}` : ''}`, S.ListTemplatesResponseSchema); },
+    template: (id: string) => request(`/templates/${encodeURIComponent(id)}`, S.TemplateResponseSchema),
+    saveTemplate: (id: string, input: S.SaveTemplateRequest) => request(`/templates/${encodeURIComponent(id)}`, S.TemplateResponseSchema, S.SaveTemplateRequestSchema.parse(input), 'PUT'),
   };
 }
 export type ApiClient = ReturnType<typeof createApi>;

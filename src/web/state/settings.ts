@@ -8,10 +8,14 @@ export interface UiSettings {
   revealMs: number;
   /** Desliga as animações de resultado. */
   animacoes: boolean;
+  /** Como os nomes (empresa, agente, tipo de arte, procedimento) aparecem: salto rápido ou digitados. */
+  nomesEstilo: 'pop' | 'digitar';
+  /** Tempo mínimo (ms) da etapa "Verificando acervo" do abastecimento (Monalisa). */
+  acervoCheckMs: number;
 }
 
-export const DEFAULT_SETTINGS: UiSettings = { triagemMinMs: 2000, revealMs: 1200, animacoes: true };
-export const SETTINGS_LIMITS = { triagemMinMs: { min: 0, max: 10000 }, revealMs: { min: 200, max: 5000 } } as const;
+export const DEFAULT_SETTINGS: UiSettings = { triagemMinMs: 2000, revealMs: 1200, animacoes: true, nomesEstilo: 'pop', acervoCheckMs: 1800 };
+export const SETTINGS_LIMITS = { triagemMinMs: { min: 0, max: 10000 }, revealMs: { min: 200, max: 5000 }, acervoCheckMs: { min: 0, max: 10000 } } as const;
 const KEY = 'awr.ui-settings';
 
 const clamp = (n: unknown, { min, max }: { min: number; max: number }, fallback: number) =>
@@ -23,6 +27,8 @@ export function parseSettings(raw: unknown): UiSettings {
     triagemMinMs: clamp(v.triagemMinMs, SETTINGS_LIMITS.triagemMinMs, DEFAULT_SETTINGS.triagemMinMs),
     revealMs: clamp(v.revealMs, SETTINGS_LIMITS.revealMs, DEFAULT_SETTINGS.revealMs),
     animacoes: typeof v.animacoes === 'boolean' ? v.animacoes : DEFAULT_SETTINGS.animacoes,
+    nomesEstilo: v.nomesEstilo === 'digitar' || v.nomesEstilo === 'pop' ? v.nomesEstilo : DEFAULT_SETTINGS.nomesEstilo,
+    acervoCheckMs: clamp(v.acervoCheckMs, SETTINGS_LIMITS.acervoCheckMs, DEFAULT_SETTINGS.acervoCheckMs),
   };
 }
 

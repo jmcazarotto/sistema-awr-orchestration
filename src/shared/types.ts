@@ -91,6 +91,21 @@ export const TriagemEmpresaSchema = z.object({
   /** cadastro = nome citado literalmente (confiança 1) · ia = escolhido pelo classificador · extracao = nome próprio não cadastrado. */
   metodo: z.enum(['cadastro', 'ia', 'extracao', 'nenhum']).default('nenhum'),
 });
+/** Informação do texto da demanda que vai para o agente criador como briefing da arte final. */
+export const BRIEFING_TIPOS = ['preco', 'promocao', 'chamada_cta', 'headline', 'texto_literal', 'tom_estilo', 'publico', 'prazo_data', 'data_entrega', 'contato', 'outro_briefing'] as const;
+export const BriefingTipoSchema = z.enum(BRIEFING_TIPOS);
+export type BriefingTipo = z.infer<typeof BriefingTipoSchema>;
+export const BriefingItemSchema = z.object({
+  /** Trecho original do texto. */
+  texto: z.string().min(1),
+  tipo: BriefingTipoSchema,
+  /** Valor normalizado quando reconhecido (ex.: "6x de R$ 99,90"). */
+  valor: z.string().min(1).optional(),
+  confianca: z.number().min(0).max(1),
+  metodo: z.enum(['regra', 'ia', 'heuristica']),
+});
+export type BriefingItem = z.infer<typeof BriefingItemSchema>;
+
 export const TriagemSchema = z.object({
   id: z.string().min(1),
   texto: z.string().min(1),
@@ -108,6 +123,8 @@ export const TriagemSchema = z.object({
   /** true quando o agente foi decidido por regra (sinal explícito no texto); a distribuição abaixo continua sendo a do classificador. */
   agenteRegra: z.boolean().default(false),
   /** Probabilidade de cada opção segundo o classificador (soma ≈ 1 por pergunta). Os campos *Confianca acima são a certeza do modelo na escolha. */
+  /** Briefing da arte extraído do texto (vai para o Van Gogh/Monalisa). */
+  briefing: z.array(BriefingItemSchema).default([]),
   probabilidades: z.object({
     procedimento: z.record(z.string(), z.number().min(0).max(1)),
     tipoTemplate: z.record(z.string(), z.number().min(0).max(1)),
@@ -447,6 +464,94 @@ export type EventsHeaders = z.infer<typeof EventsHeadersSchema>;
 export const EmptyRequestSchema = z.strictObject({});
 export type EmptyRequest = z.infer<typeof EmptyRequestSchema>;
 
+/* ───────── Empresas (clientes) e Templates por empresa ───────── */
+export const EmpresaIdSchema = z.string().regex(/^[a-z0-9_]+$/);
+export const UnidadeEmpresaSchema = z.object({
+  id: EmpresaIdSchema, nome: z.string().trim().min(1), cidade: z.string().trim().min(1),
+  uf: z.string().trim().length(2).optional(), aliases: z.array(z.string().trim().min(1)).default([]),
+});
+export type UnidadeEmpresa = z.infer<typeof UnidadeEmpresaSchema>;
+/** Cliente AWR (rede/franquia ou independente). Fonte: brain/clientes.json. */
+export const EmpresaSchema = z.object({
+  id: EmpresaIdSchema,
+  nome: z.string().trim().min(1),
+  tipo: z.enum(['franquia', 'independente']).default('independente'),
+  aliases: z.array(z.string().trim().min(1)).default([]),
+  unidades: z.array(UnidadeEmpresaSchema).default([]),
+  /** Procedimentos que a empresa vende (subconjunto dos literais oficiais). */
+  procedimentos: z.array(ProcedimentoSchema).default([...PROCEDIMENTOS]),
+  /** Caminho público da logo (servido em /acervo/*), ex.: "_marcas/royal_face/logo.svg". */
+  logo: z.string().min(1).nullable().default(null),
+  /** Paleta da marca (hex). */
+  cores: z.object({ primaria: z.string(), secundaria: z.string(), texto: z.string() })
+    .default({ primaria: '#c9a45c', secundaria: '#3f3d3b', texto: '#ffffff' }),
+});
+export type Empresa = z.infer<typeof EmpresaSchema>;
+export const EmpresaInputSchema = EmpresaSchema.omit({ logo: true }).extend({ logo: z.string().min(1).nullable().optional() });
+export type EmpresaInput = z.infer<typeof EmpresaInputSchema>;
+
+/** Tipos de elemento posicionáveis no editor de template (canvas 2D). */
+export const ELEMENTO_TIPOS = ['foto_antes', 'foto_depois', 'foto_principal', 'titulo', 'subtitulo', 'destaque', 'preco', 'logo', 'texto', 'forma'] as const;
+export const ElementoTipoSchema = z.enum(ELEMENTO_TIPOS);
+export type ElementoTipo = z.infer<typeof ElementoTipoSchema>;
+export const ElementoEstiloSchema = z.object({
+  fonte: z.enum(['serif_display', 'sans_black', 'sans']).default('sans'),
+  tamanho: z.number().positive().default(48),
+  peso: z.number().int().min(100).max(900).default(700),
+  italico: z.boolean().default(false),
+  cor: z.string().default('#ffffff'),
+  alinhamento: z.enum(['esquerda', 'centro', 'direita']).default('centro'),
+  /** Fundo do elemento (cor ou gradiente CSS-like "linear:#a,#b"); null = transparente. */
+  fundo: z.string().nullable().default(null),
+  raio: z.number().nonnegative().default(0),
+  borda: z.object({ cor: z.string(), largura: z.number().nonnegative() }).nullable().default(null),
+  sombra: z.boolean().default(false),
+  opacidade: z.number().min(0).max(1).default(1),
+  caixaAlta: z.boolean().default(false),
+});
+export type ElementoEstilo = z.infer<typeof ElementoEstiloSchema>;
+/** Coordenadas em px do canvas do template (origem no canto superior esquerdo). */
+export const ElementoTemplateSchema = z.object({
+  id: z.string().min(1),
+  tipo: ElementoTipoSchema,
+  rotulo: z.string().min(1),
+  x: z.number(), y: z.number(), w: z.number().positive(), h: z.number().positive(),
+  rotacao: z.number().default(0),
+  z: z.number().int().default(0),
+  bloqueado: z.boolean().default(false),
+  /** Texto placeholder (títulos/preço) — pode conter {{procedimento}}, {{preco}}, {{parcelas}}. */
+  conteudo: z.string().default(''),
+  estilo: ElementoEstiloSchema.default(ElementoEstiloSchema.parse({})),
+});
+export type ElementoTemplate = z.infer<typeof ElementoTemplateSchema>;
+export const TemplateArteSchema = z.object({
+  /** ex.: "royal_face__preenchimento_labial__antes_depois_1" */
+  id: z.string().regex(/^[a-z0-9_]+$/),
+  empresaId: EmpresaIdSchema,
+  procedimento: ProcedimentoSchema,
+  familia: FamiliaArteSchema,
+  /** Slot oficial do template (antes_depois_1|2, banco_imagem_1|2) — 2 por família. */
+  tipoTemplate: TipoTemplateSchema,
+  nome: z.string().trim().min(1),
+  canvas: z.object({ largura: z.number().int().positive(), altura: z.number().int().positive() }).default({ largura: 1080, altura: 1350 }),
+  /** Fundo do canvas: cor sólida ou "linear:#topo,#base". */
+  fundo: z.string().default('linear:#3f3d3b,#8a6f4e'),
+  elementos: z.array(ElementoTemplateSchema),
+  atualizadoEm: z.iso.datetime(),
+}).refine(t => t.tipoTemplate.startsWith(t.familia), 'tipoTemplate não pertence à família');
+export type TemplateArte = z.infer<typeof TemplateArteSchema>;
+export const templateId = (empresaId: string, procedimento: Procedimento, tipoTemplate: TipoTemplate) => `${empresaId}__${procedimento}__${tipoTemplate}`;
+
+export const ListEmpresasResponseSchema = z.object({ empresas: z.array(EmpresaSchema) });
+export const EmpresaResponseSchema = z.object({ empresa: EmpresaSchema });
+export const TemplatesQuerySchema = z.object({ empresaId: EmpresaIdSchema.optional(), procedimento: ProcedimentoSchema.optional(), familia: FamiliaArteSchema.optional() });
+export type TemplatesQuery = z.infer<typeof TemplatesQuerySchema>;
+export const ListTemplatesResponseSchema = z.object({ templates: z.array(TemplateArteSchema) });
+export const TemplateResponseSchema = z.object({ template: TemplateArteSchema });
+/** PUT /api/templates/:id — atualizadoEm é definido pelo servidor. */
+export const SaveTemplateRequestSchema = z.object({ nome: z.string().trim().min(1), fundo: z.string(), elementos: z.array(ElementoTemplateSchema) });
+export type SaveTemplateRequest = z.infer<typeof SaveTemplateRequestSchema>;
+
 export interface EventBusPublic {
   /** Listener síncrono; erros do consumidor não devem interromper o motor. */
   subscribe(listener: (event: SseEnvelope) => void): () => void;
@@ -469,6 +574,17 @@ export interface Orchestrator {
   getDemanda(id: string): Demanda | undefined;
   listMessages(filtro?: MessagesFilter): InboxMessage[];
   resetHops(demandaId: string): Promise<Demanda>;
+  readonly empresas: {
+    list(): Promise<Empresa[]>;
+    get(id: string): Promise<Empresa | undefined>;
+    upsert(input: EmpresaInput): Promise<Empresa>;
+    setLogo(id: string, arquivo: { nome: string; dados: Buffer }): Promise<Empresa>;
+  };
+  readonly templates: {
+    list(filtro?: TemplatesQuery): Promise<TemplateArte[]>;
+    get(id: string): Promise<TemplateArte | undefined>;
+    save(id: string, input: SaveTemplateRequest): Promise<TemplateArte>;
+  };
   start(): Promise<void>;
   stop(): Promise<void>;
   readonly config: OrchestratorConfig;

@@ -9,8 +9,11 @@ import { ApprovalPage } from './pages/ApprovalPage';
 import { AcervoPage } from './pages/AcervoPage';
 import { BrainPage } from './pages/BrainPage';
 import { LogsPage } from './pages/LogsPage';
+import { EmpresasPage } from './pages/EmpresasPage';
+import { TemplatesPage } from './pages/TemplatesPage';
+import { TemplateEditorPage } from './pages/TemplateEditorPage';
 
-const nav=[{path:'/',label:'Painel ao vivo',icon:'activity'},{path:'/nova',label:'Nova demanda',icon:'plus'},{path:'/demandas',label:'Demandas',icon:'list'},{path:'/aprovacoes',label:'Aprovação AWR',icon:'check'},{path:'/acervo',label:'Acervo',icon:'image'},{path:'/cerebro',label:'Cérebro (Skills)',icon:'brain'},{path:'/logs',label:'Logs técnicos',icon:'code'}];
+const nav=[{path:'/',label:'Painel ao vivo',icon:'activity'},{path:'/nova',label:'Nova demanda',icon:'plus'},{path:'/demandas',label:'Demandas',icon:'list'},{path:'/aprovacoes',label:'Aprovação AWR',icon:'check'},{path:'/acervo',label:'Acervo',icon:'image'},{path:'/empresas',label:'Empresas',icon:'building'},{path:'/templates',label:'Templates',icon:'layout'},{path:'/cerebro',label:'Cérebro (Skills)',icon:'brain'},{path:'/logs',label:'Logs técnicos',icon:'code'}];
 function readMode(){try{return localStorage.getItem('awr-visual-mode')==='2'?'2':'1';}catch{return '1';}}
 export function App(){
   const state=useAppState();const runtime=useRuntime();const [hash,setHash]=useState(location.hash.slice(1)||'/');const [mode,setMode]=useState(readMode);const [menu,setMenu]=useState(false);
@@ -21,6 +24,7 @@ export function App(){
   useEffect(()=>{document.title=`${active?.label??'Página não encontrada'} · AWR`;},[active?.label]);
   const demandId=path.startsWith('/demandas/')?decodeURIComponent(path.slice('/demandas/'.length)):null;
   const approvalId=path.startsWith('/aprovacoes/')?decodeURIComponent(path.slice('/aprovacoes/'.length)):undefined;
+  const templateId=path.startsWith('/templates/')?decodeURIComponent(path.slice('/templates/'.length)):null;
   let page;
   if(path==='/')page=<LivePage/>;
   else if(path==='/nova')page=<NewDemandPage/>;
@@ -28,6 +32,9 @@ export function App(){
   else if(path==='/demandas')page=<DemandsPage key={hash} initialFilter={new URLSearchParams(hash.split('?')[1]).get('estado')??''}/>;
   else if(path==='/aprovacoes'||approvalId)page=<ApprovalPage id={approvalId}/>;
   else if(path==='/acervo')page=<AcervoPage/>;
+  else if(path==='/empresas')page=<EmpresasPage/>;
+  else if(path==='/templates')page=<TemplatesPage query={new URLSearchParams(hash.split('?')[1])}/>;
+  else if(templateId)page=<TemplateEditorPage id={templateId} key={templateId}/>;
   else if(path==='/cerebro')page=<BrainPage/>;
   else if(path==='/logs')page=<LogsPage/>;
   else page=<section className="card"><h1>Página não encontrada</h1><a href="#/">Voltar para o painel</a></section>;

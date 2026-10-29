@@ -2,12 +2,12 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 
 /** Configuração da animação de resultados: duração total e se está ligada (respeita prefers-reduced-motion). */
-interface RevealConfig { ms: number; on: boolean }
+interface RevealConfig { ms: number; on: boolean; nomes?: 'pop' | 'digitar' }
 const RevealContext = createContext<RevealConfig>({ ms: 0, on: false });
 
-export function RevealProvider({ ms, on, children }: RevealConfig & { children: ReactNode }) {
+export function RevealProvider({ ms, on, nomes = 'pop', children }: RevealConfig & { children: ReactNode }) {
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
-  return <RevealContext.Provider value={{ ms, on: on && !reduced }}>{children}</RevealContext.Provider>;
+  return <RevealContext.Provider value={{ ms, on: on && !reduced, nomes }}>{children}</RevealContext.Provider>;
 }
 
 /** Progresso 0→1 com easing, iniciado após `delay` ms. */
@@ -34,6 +34,18 @@ export function TypeText({ text, delay = 0 }: { text: string; delay?: number }) 
   const p = useProgress(delay);
   const shown = text.slice(0, Math.round(text.length * p));
   return <span aria-label={text}><span aria-hidden="true">{shown}</span>{p < 1 && <span className="type-caret" aria-hidden="true"/>}</span>;
+}
+
+/** Texto que salta na tela (pop-in rápido) após `delay` ms. */
+export function PopText({ text, delay = 0 }: { text: string; delay?: number }) {
+  const { on } = useContext(RevealContext);
+  return <span className={on ? 'pop-in' : undefined} style={on ? { animationDelay: `${delay}ms` } : undefined}>{text}</span>;
+}
+
+/** Nome (empresa, agente, tipo de arte, procedimento) no estilo escolhido nas Configurações. */
+export function NameText({ text, delay = 0 }: { text: string; delay?: number }) {
+  const { nomes } = useContext(RevealContext);
+  return nomes === 'digitar' ? <TypeText text={text} delay={delay}/> : <PopText text={text} delay={delay}/>;
 }
 
 /** Porcentagem contando de 0 até o valor. */

@@ -1,3 +1,4 @@
+import { MemoryTemplateStore } from './core/MemoryTemplateStore';
 import { mkdtemp, cp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -15,7 +16,7 @@ export async function fixture(overrides: Partial<OrchestratorConfig> = {}, depen
   await cp(resolve('brain'), join(root, 'brain'), { recursive: true });
   const config = OrchestratorConfigSchema.parse({ ACERVO_AUTOFILL: false, MOCK_REJECT_RATE: 0, BRAIN_DIR: join(root, 'brain'), DATA_DIR: join(root, 'data'), ACERVO_DIR: join(root, 'acervo'), ...overrides });
   const storage = new MemoryAcervoStorage(); const stateStore = new MemoryStateStore(); const clock = new FakeClock();
-  const app = createOrchestratorWithDependencies(config, { storage, stateStore, clock, watchFiles: false, ...dependencies });
+  const app = createOrchestratorWithDependencies(config, { templateStore: new MemoryTemplateStore(), storage, stateStore, clock, watchFiles: false, ...dependencies });
   const bus = app.bus as EventBus;
   await app.start();
   return { root, app, bus, config, clock, storage, stateStore, close: async () => { await app.stop(); await rm(root, { recursive: true, force: true }); } };

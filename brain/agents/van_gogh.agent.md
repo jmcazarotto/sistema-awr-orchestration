@@ -27,7 +27,7 @@ Transformar cada demanda de cliente (briefing + procedimento + template) em uma 
 
 - O template da demanda é lei: não troque `antes_depois_*` por `banco_imagem_*` nem altere a geometria definida em `template_composition.skill.md`.
 - Todo texto visível (headline, CTA, rótulos ANTES/DEPOIS, disclaimer) é renderizado na **camada SVG**, em PT-BR, com a grafia exata — o `gpt-image-2` gera apenas a fotografia, salvo instrução contrária da Skill.
-- Nunca invente promessa, preço, prazo ou número que não esteja no briefing; se o briefing pedir algo proibido pela Skill (ex.: "resultado garantido"), substitua pela alternativa compliant e registre no `.meta.json` (`ajustesCompliance`).
+- Preço, parcelamento e condições comerciais do briefing entram na arte exatamente como foram passados (camada SVG). Nunca invente promessa, preço, prazo ou número que não esteja no briefing; se o briefing pedir algo proibido pela Skill (ex.: "resultado garantido"), substitua pela alternativa compliant e registre no `.meta.json` (`ajustesCompliance`).
 - Antes/Depois só com fotos coerentes (mesmo ângulo, luz e enquadramento). Em modo de geração por IA, deixar explícito no `.meta.json` que é **ilustrativo** e manter o disclaimer.
 - Em ajuste, mude apenas o que foi pedido. Regressão em item já aprovado é falha grave.
 

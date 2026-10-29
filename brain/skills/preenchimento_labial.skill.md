@@ -14,18 +14,20 @@ atualizado_em: 2026-10-28
 **Público-alvo:** mulheres (e homens) maiores de 18 anos, 25–55 anos, que buscam realçar a boca de forma discreta e que valorizam segurança e avaliação profissional. Tom: acolhedor, elegante, informativo.
 
 **Promessa permitida:** informar que o procedimento existe, que exige **avaliação individual** e que é feito por profissional habilitado. Pode-se falar em "harmonia", "contorno", "hidratação", "naturalidade", "cuidado", "avaliação".
-**Promessa proibida:** qualquer garantia, comparação de superioridade, urgência ou apelo comercial de preço.
+**Promessa proibida:** qualquer garantia, comparação de superioridade ou urgência.
 
 ### Compliance (obrigatório)
 
-- **CFM Res. 2.336/2023 (médicos):** antes/depois só com finalidade **educativa**, com **consentimento** do paciente, mesmas condições de captura nas duas fotos, sem sensacionalismo, sem garantia ou promessa de resultado, sem divulgar preço, promoção, sorteio ou brinde. Aplicar o mesmo rigor a profissionais não médicos (conservador).
+- **CFM Res. 2.336/2023 (médicos):** antes/depois só com finalidade **educativa**, com **consentimento** do paciente, mesmas condições de captura nas duas fotos, sem sensacionalismo, sem garantia ou promessa de resultado, sem sorteio ou brinde. Aplicar o mesmo rigor a profissionais não médicos (conservador).
 - **CDC / CONAR:** publicidade verdadeira, identificável e que não induza a erro; sem superlativos comprobatórios ("o melhor", "número 1").
 - **ANVISA:** não citar marcas comerciais de preenchedores, nem doses/volumes (ex.: "1 ml").
 - **Meta Ads — Saúde e Aparência Pessoal:** proibido gerar percepção negativa do corpo ("seus lábios são finos?"), segmentar defeito em 2ª pessoa, prometer resultado milagroso ou mostrar antes/depois exagerado/improvável. Antes/depois só com diferença **sutil e plausível**; público 18+. Se o antes/depois for reprovado pela plataforma, usar `banco_imagem_*`.
 - **Imagens geradas por IA** nunca representam paciente real: sempre incluir "Imagem ilustrativa." no disclaimer. Resultados reais de pacientes devem vir de acervo próprio com consentimento (fora do escopo desta skill).
 - **Identificação:** nunca inventar CRM/RQE ou registro profissional; só exibir se vier no `{{briefing_cliente}}`.
 
-**Termos e afirmações PROIBIDOS (em qualquer texto da arte):** "garantido", "garantia", "sem dor", "indolor", "definitivo", "para sempre", "milagre", "milagroso", "100%", "perfeito/perfeita", "instantâneo", "sem risco", "o melhor", "número 1", "promoção", "desconto", "grátis", "brinde", "R$", "parcelado", "só hoje", "últimas vagas", "boca dos sonhos", "lábios finos demais", "corrija seus lábios", marcas de produtos.
+**Termos e afirmações PROIBIDOS (em qualquer texto da arte):** "garantido", "garantia", "sem dor", "indolor", "definitivo", "para sempre", "milagre", "milagroso", "100%", "perfeito/perfeita", "instantâneo", "sem risco", "o melhor", "número 1", "grátis", "brinde", "só hoje", "últimas vagas", "boca dos sonhos", "lábios finos demais", "corrija seus lábios", marcas de produtos.
+
+**Preço e condições comerciais:** permitidos quando vierem do briefing do cliente (ex.: "6x de R$ 99,90", "20% de desconto"). Renderizar exatamente como no briefing, na camada SVG, com destaque legível. Nunca inventar ou alterar valor, parcelamento ou validade.
 
 **Disclaimer obrigatório (texto exato, sempre visível):**
 `Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.`
@@ -91,7 +93,7 @@ COMPOSITION: leave clean, low-detail areas (soft uniform background or gradient)
 
 TEXT POLICY: do NOT draw any letters, numbers, logos, watermarks, captions or fake UI in the image. If the template absolutely requires in-image text, the ONLY allowed strings, in Brazilian Portuguese with exact spelling and accents, are: "{{headline}}", "{{cta}}", "ANTES", "DEPOIS". Never use English words.
 
-NEGATIVE CONSTRAINTS: no needles, syringes, gloves or injection scenes; no blood, bruising, swelling or redness; no duck-lips or asymmetric lips; no extra, missing or deformed fingers or teeth; no plastic or airbrushed skin; no beauty filter; no black background; no price, discount, guarantee or promotional claims; no before/after exaggeration; no brand logos of products.
+NEGATIVE CONSTRAINTS: no needles, syringes, gloves or injection scenes; no blood, bruising, swelling or redness; no duck-lips or asymmetric lips; no extra, missing or deformed fingers or teeth; no plastic or airbrushed skin; no beauty filter; no black background; no guarantee or miraculous claims; no before/after exaggeration; no brand logos of products.
 
 ADJUSTMENTS REQUESTED (apply with priority; empty means none): {{feedback_ajuste}}
 LEARNED RULES (mandatory, never violate): {{aprendizados}}
@@ -100,7 +102,7 @@ LEARNED RULES (mandatory, never violate): {{aprendizados}}
 ## 5. Checklist de Rubrica do Diretor de Arte
 
 - [R01][critico] O disclaimer legal ("Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.") está visível e completo?
-- [R02][critico] A arte está livre de preço, promoção, garantia e promessa de resultado (ex.: "garantido", "100%", "definitivo", "milagre", "R$")?
+- [R02][critico] A arte está livre de garantia e promessa de resultado (ex.: "garantido", "100%", "definitivo", "milagre"; preço/parcelamento do briefing são permitidos)?
 - [R03][critico] Todo o texto visível está em português do Brasil, escrito exatamente como esperado, sem erros de ortografia e sem palavras em inglês?
 - [R04][critico] Os lábios e o rosto estão anatomicamente corretos (sem distorção, assimetria exagerada, dentes ou dedos deformados)?
 - [R05][critico] Headline, CTA e disclaimer estão legíveis, com contraste suficiente e sem cortes ou sobreposição entre si?

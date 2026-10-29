@@ -1,10 +1,14 @@
+import { EmpresaIdSchema, SaveTemplateRequestSchema, TemplateArteSchema, TemplatesQuerySchema } from '../shared/types';
+import { ClientesRegistry } from './brain/ClientesRegistry';
+import { FsTemplateStore } from './core/FsTemplateStore';
+import { seedTemplates } from './templates/seeds';
 import { DemandaIdSchema, FeedbackHumanoSchema, FillAcervoRequestSchema, MessagesFilterSchema, OrchestratorConfigSchema, SubmitDemandInputSchema } from '../shared/types';
 import type { Demanda, FeedbackHumano, Orchestrator, OrchestratorConfig, SubmitDemandInput } from '../shared/types';
 import { EventBus } from './core/EventBus';
 import { FileStateStore } from './core/FileStateStore';
 import { FsAcervoStorage } from './core/FsAcervoStorage';
 import { NanoIdGenerator, SystemClock } from './core/Clock';
-import type { AcervoStorage, Clock, IdGenerator, StateStore } from './core/interfaces';
+import type { AcervoStorage, Clock, IdGenerator, StateStore, TemplateStore } from './core/interfaces';
 import { allocateId, createDemanda } from './core/demandaFactory';
 import { OrchestratorError } from './core/errors';
 import { BrainLoader } from './brain/BrainLoader';
@@ -29,9 +33,10 @@ export { MemoryStateStore } from './core/MemoryStateStore';
 export { FsAcervoStorage } from './core/FsAcervoStorage';
 export { MemoryAcervoStorage } from './core/MemoryAcervoStorage';
 export { FakeClock, SystemClock, NanoIdGenerator } from './core/Clock';
-export type { StateStore, AcervoStorage, Clock, IdGenerator } from './core/interfaces';
+export type { StateStore, AcervoStorage, Clock, IdGenerator, TemplateStore } from './core/interfaces';
 
 export interface OrchestratorDependencies extends ReviewerOptions {
+  templateStore?: TemplateStore; clientesRegistry?: ClientesRegistry;
   stateStore?: StateStore; storage?: AcervoStorage; clock?: Clock; ids?: IdGenerator;
   watchFiles?: boolean; apiKey?: string; jevApiKey?: string; fetch?: typeof fetch;
 }
@@ -41,6 +46,9 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
   const config = OrchestratorConfigSchema.parse(input);
   const clock = dependencies.clock ?? new SystemClock();
   const storage = dependencies.storage ?? new FsAcervoStorage(config.ACERVO_DIR);
+  const clientes = dependencies.clientesRegistry ?? new ClientesRegistry(config.BRAIN_DIR);
+  const templateStore = dependencies.templateStore ?? new FsTemplateStore(config.DATA_DIR);
+  const seed = async () => seedTemplates(templateStore, await clientes.list(), clock.now().toISOString());
   const bus = new EventBus(dependencies.stateStore ?? new FileStateStore(config.DATA_DIR), clock, dependencies.ids ?? new NanoIdGenerator(), config.MAX_HOPS);
   const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' ? new AiClient(config, bus, dependencies.apiKey ?? process.env.OPENAI_API_KEY) : undefined;
   const brain = new BrainLoader(config.BRAIN_DIR, clock, bus, config.AI_MODE === 'openai' ? ai : undefined);
@@ -94,7 +102,7 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
       if (startup) return startup;
       if (started) return;
       startup = (async () => {
-        await storage.initialize(); await bus.hydrate();
+        await storage.initialize(); await seed(); await bus.hydrate();
         await Promise.all(['art_director', 'van_gogh', 'monalisa'].map(actor => brain.loadAgent(actor as 'art_director' | 'van_gogh' | 'monalisa')));
         started = true; await bus.resume(); await recover(); await watcher.start();
         cancelDirector = clock.setInterval(() => director.tick().catch(() => bus.log('error', 'Falha no scheduler do Diretor')), config.DIRECTOR_TICK_MS);
@@ -125,6 +133,41 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
     listDemandas: () => Object.values(bus.snapshot().demandas),
     getDemanda: id => bus.snapshot().demandas[id],
     listMessages: filtro => { const filter = MessagesFilterSchema.parse(filtro ?? {}); return bus.snapshot().messages.filter(message => !filter.demandaId || message.demandaId === filter.demandaId); },
+    empresas: {
+      list: () => clientes.list(),
+      get: async id => (await clientes.list()).find(empresa => empresa.id === id),
+      async upsert(input) { const empresa = await clientes.upsert(input); await seedTemplates(templateStore, [empresa], clock.now().toISOString()); return empresa; },
+      async setLogo(id, arquivo) {
+        if (!EmpresaIdSchema.safeParse(id).success || !(await clientes.list()).some(empresa => empresa.id === id)) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
+        const ext = /\.(png|jpe?g|svg|webp)$/i.exec(arquivo.nome)?.[1]?.toLowerCase();
+        if (!ext || arquivo.dados.length > 2 * 1024 * 1024 || !arquivo.dados.length) throw new OrchestratorError('VALIDATION_ERROR', 'Logo deve ser PNG, JPG, SVG ou WebP de até 2 MB.', 400);
+        const path = `_marcas/${id}/logo.${ext === 'jpeg' ? 'jpg' : ext}`;
+        await storage.write(path, arquivo.dados);
+        return clientes.setLogo(id, path);
+      },
+    },
+    templates: {
+      async list(filtro) {
+        const query = TemplatesQuerySchema.parse(filtro ?? {});
+        return (await templateStore.list()).filter(template => (!query.empresaId || template.empresaId === query.empresaId) && (!query.procedimento || template.procedimento === query.procedimento) && (!query.familia || template.familia === query.familia));
+      },
+      get: id => templateStore.get(id),
+      async save(id, value) {
+        const previous = await templateStore.get(id);
+        if (!previous) throw new OrchestratorError('NOT_FOUND', 'Template não encontrado.', 404);
+        const input = SaveTemplateRequestSchema.parse(value);
+        const ids = input.elementos.map(elemento => elemento.id);
+        const { largura, altura } = previous.canvas;
+        if (new Set(ids).size !== ids.length || input.elementos.some(e => e.x >= largura || e.y >= altura || e.x + e.w <= 0 || e.y + e.h <= 0)) {
+          throw new OrchestratorError('VALIDATION_ERROR', 'Elementos devem ter IDs únicos e sobrepor o canvas.', 400);
+        }
+        const template = TemplateArteSchema.parse({ ...previous, ...input, atualizadoEm: clock.now().toISOString() });
+        await templateStore.save(template); return template;
+      },
+    },
     acervo: { grid: () => watcher.grid(), fill: (procedimento, tipoTemplate) => { requireStarted(); FillAcervoRequestSchema.parse({ procedimento, tipoTemplate }); return watcher.fill(procedimento, tipoTemplate); } },
   };
 }
+
+export { FsTemplateStore } from './core/FsTemplateStore';
+export { MemoryTemplateStore } from './core/MemoryTemplateStore';

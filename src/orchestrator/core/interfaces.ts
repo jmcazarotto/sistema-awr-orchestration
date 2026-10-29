@@ -36,3 +36,10 @@ export interface Clock {
 export interface IdGenerator { next(): string }
 export type DemandMutation = (demanda: Demanda, state: EngineState) => void;
 export type MessageHandler = (message: InboxMessage) => Promise<void>;
+
+/** Persistência portátil dos templates de arte por empresa. */
+export interface TemplateStore {
+  list(): Promise<import('../../shared/types').TemplateArte[]>;
+  get(id: string): Promise<import('../../shared/types').TemplateArte | undefined>;
+  save(template: import('../../shared/types').TemplateArte): Promise<void>;
+}

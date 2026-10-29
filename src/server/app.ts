@@ -1,3 +1,4 @@
+import { EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import {
@@ -22,7 +23,7 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
   const app = new Hono();
   const streams = new Set<CloseStream>();
   activeStreams.set(app, streams);
-  app.use('*', cors({ origin: 'http://localhost:5173', allowMethods: ['GET', 'POST', 'OPTIONS'], allowHeaders: ['Content-Type', 'Last-Event-ID'] }));
+  app.use('*', cors({ origin: 'http://localhost:5173', allowMethods: ['GET', 'POST', 'PUT', 'OPTIONS'], allowHeaders: ['Content-Type', 'Last-Event-ID'] }));
   app.onError((error, c) => {
     const failure = domainFailure(error);
     return c.json({ error: { code: failure?.code ?? 'INTERNAL_ERROR', message: failure?.message ?? 'Erro interno ao processar a solicitação.' } }, failure?.status ?? 500);
@@ -38,6 +39,34 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     if (resultado.estado !== 'AGUARDANDO_APROVACAO_AWR') throw new ApiFailure(409, 'INVALID_TRANSITION', 'A demanda não está aguardando aprovação AWR.');
     return resultado;
   };
+  app.get('/api/empresas', async c => c.json(ListEmpresasResponseSchema.parse({ empresas: await orchestrator.empresas.list() })));
+  app.get('/api/empresas/:id', async c => {
+    const empresa = await orchestrator.empresas.get(c.req.param('id'));
+    if (!empresa) throw new ApiFailure(404, 'NOT_FOUND', 'Empresa não encontrada.');
+    return c.json(EmpresaResponseSchema.parse({ empresa }));
+  });
+  app.post('/api/empresas', async c => c.json(EmpresaResponseSchema.parse({ empresa: await orchestrator.empresas.upsert(validate(EmpresaInputSchema, await bodyJson(c))) })));
+  app.post('/api/empresas/:id/logo', async c => {
+    let form: FormData;
+    try { form = await c.req.raw.formData(); }
+    catch { throw new ApiFailure(400, 'VALIDATION_ERROR', 'Envie multipart/form-data com o campo arquivo.'); }
+    const arquivo = form.get('arquivo');
+    const mimes = ['image/png', 'image/jpeg', 'image/svg+xml', 'image/webp'];
+    if (!(arquivo instanceof File) || !/\.(png|jpe?g|svg|webp)$/i.test(arquivo.name) || !mimes.includes(arquivo.type) || arquivo.size === 0 || arquivo.size > 2 * 1024 * 1024) {
+      throw new ApiFailure(400, 'VALIDATION_ERROR', 'Logo deve ser PNG, JPG, SVG ou WebP de até 2 MB.');
+    }
+    return c.json(EmpresaResponseSchema.parse({ empresa: await orchestrator.empresas.setLogo(c.req.param('id'), { nome: arquivo.name, dados: Buffer.from(await arquivo.arrayBuffer()) }) }));
+  });
+  app.get('/api/templates', async c => {
+    if (Object.values(c.req.queries()).some(values => values.length !== 1)) throw new ApiFailure(400, 'VALIDATION_ERROR', 'Query não aceita campos repetidos.');
+    return c.json(ListTemplatesResponseSchema.parse({ templates: await orchestrator.templates.list(validate(TemplatesQuerySchema, c.req.query())) }));
+  });
+  app.get('/api/templates/:id', async c => {
+    const template = await orchestrator.templates.get(c.req.param('id'));
+    if (!template) throw new ApiFailure(404, 'NOT_FOUND', 'Template não encontrado.');
+    return c.json(TemplateResponseSchema.parse({ template }));
+  });
+  app.put('/api/templates/:id', async c => c.json(TemplateResponseSchema.parse({ template: await orchestrator.templates.save(c.req.param('id'), validate(SaveTemplateRequestSchema, await bodyJson(c))) })));
   app.post('/api/triagem', async c => {
     const { texto } = validate(TriagemRequestSchema, await bodyJson(c));
     return c.json(TriagemResponseSchema.parse({ triagem: await orchestrator.triar(texto) }));
@@ -96,7 +125,7 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
   app.get('/acervo/*', async c => {
     const rawPath = new URL(c.req.url).pathname.slice('/acervo/'.length);
     const caminho = decodePublicPath(rawPath);
-    const contentType = /\.png$/i.test(caminho) ? 'image/png' : /\.jpe?g$/i.test(caminho) ? 'image/jpeg' : /\.meta\.json$/i.test(caminho) ? 'application/json; charset=utf-8' : undefined;
+    const contentType = /\.png$/i.test(caminho) ? 'image/png' : /\.jpe?g$/i.test(caminho) ? 'image/jpeg' : /\.svg$/i.test(caminho) ? 'image/svg+xml' : /\.webp$/i.test(caminho) ? 'image/webp' : /\.meta\.json$/i.test(caminho) ? 'application/json; charset=utf-8' : undefined;
     if (!contentType) throw new ApiFailure(404, 'NOT_FOUND', 'Arquivo não público.');
     const bytes = await readContainedFile(acervoDir, caminho);
     return new Response(new Uint8Array(bytes), { headers: { 'Content-Type': contentType, 'Cache-Control': 'no-cache' } });

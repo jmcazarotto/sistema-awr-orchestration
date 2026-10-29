@@ -41,3 +41,32 @@ describe('mock local contra os mesmos contratos',()=>{
     await api.fill();const total=(await api.demandas()).demandas.length;await api.fill();expect((await api.demandas()).demandas).toHaveLength(total);await vi.advanceTimersByTimeAsync(3000);events.forEach(event=>expect(SseEnvelopeSchema.safeParse(event).success).toBe(true));close();expect(vi.getTimerCount()).toBe(0);
   });
 });
+describe('empresas e templates',()=>{
+  it('lê empresas e templates do mock com filtros e valida os contratos',async()=>{
+    const api=createApi(createMockApi().fetch);
+    const {empresas}=await api.empresas();expect(empresas[0]).toMatchObject({id:'royal_face',tipo:'franquia'});expect(empresas[0]!.unidades).toHaveLength(2);
+    expect((await api.empresa('royal_face')).empresa.nome).toBe('Royal Face');
+    expect((await api.templates()).templates).toHaveLength(12);
+    const ad=(await api.templates({empresaId:'royal_face',procedimento:'preenchimento_labial',familia:'antes_depois'})).templates;expect(ad.map(t=>t.tipoTemplate)).toEqual(['antes_depois_1','antes_depois_2']);
+    const t1=(await api.template('royal_face__preenchimento_labial__antes_depois_1')).template;expect(t1.fundo).toBe('linear:#4a4947,#9b7d57');expect(t1.elementos.find(e=>e.tipo==='foto_antes')).toMatchObject({x:68,y:243,w:460,h:462});
+    await expect(api.template('nao_existe')).rejects.toMatchObject({status:404});
+  });
+  it('salva template via PUT e empresa via POST (upsert)',async()=>{
+    const mock=createMockApi();const api=createApi(mock.fetch);const id='royal_face__botox__banco_imagem_1';
+    const t=(await api.template(id)).template;
+    const saved=await api.saveTemplate(id,{nome:'Novo nome',fundo:'#111111',elementos:t.elementos.slice(0,2)});
+    expect(saved.template).toMatchObject({nome:'Novo nome',fundo:'#111111'});expect((await api.template(id)).template.elementos).toHaveLength(2);
+    expect(()=>api.saveTemplate(id,{nome:'  ',fundo:'#111',elementos:[]})).toThrow();
+    const nova=await api.saveEmpresa({id:'clinica_sol',nome:'Clínica Sol',tipo:'independente',aliases:[],unidades:[],procedimentos:['botox'],cores:{primaria:'#176af2',secundaria:'#10172f',texto:'#ffffff'}});
+    expect(nova.empresa.logo).toBeNull();expect((await api.templates({empresaId:'clinica_sol'})).templates).toHaveLength(4);
+    expect((await api.empresas()).empresas).toHaveLength(2);
+  });
+  it('envia PUT com JSON e upload multipart sem Content-Type manual',async()=>{
+    const transport=vi.fn<typeof fetch>().mockImplementation(async()=>new Response(JSON.stringify({empresa:{id:'royal_face',nome:'Royal Face',logo:'_marcas/royal_face/logo.svg'}})));const api=createApi(transport);
+    await api.uploadLogo('royal_face',new Blob(['<svg/>'],{type:'image/svg+xml'}));
+    const [url,init]=transport.mock.calls[0]!;expect(url).toBe('/api/empresas/royal_face/logo');expect(init?.method).toBe('POST');expect(init?.body).toBeInstanceOf(FormData);expect((init?.body as FormData).get('arquivo')).toBeInstanceOf(Blob);expect(init?.headers).toBeUndefined();
+    const put=vi.fn<typeof fetch>().mockResolvedValue(new Response('{}',{status:500}));await createApi(put).saveTemplate('a_b',{nome:'x',fundo:'#000',elementos:[]}).catch(()=>{});
+    expect(put.mock.calls[0]![1]).toMatchObject({method:'PUT',headers:{'Content-Type':'application/json'}});
+    const q=vi.fn<typeof fetch>().mockResolvedValue(new Response('{"templates":[]}'));await createApi(q).templates({empresaId:'royal_face',familia:'banco_imagem'});expect(q.mock.calls[0]![0]).toBe('/api/templates?empresaId=royal_face&familia=banco_imagem');
+  });
+});

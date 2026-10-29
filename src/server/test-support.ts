@@ -1,3 +1,7 @@
+import { ClientesRegistry } from '../orchestrator/brain/ClientesRegistry';
+import { MemoryTemplateStore } from '../orchestrator/core/MemoryTemplateStore';
+import { seedTemplates } from '../orchestrator/templates/seeds';
+import { OrchestratorError } from '../orchestrator/core/errors';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -59,6 +63,30 @@ export class FakeOrchestrator implements Orchestrator {
     total: 12, preenchidos: 0, vazios: 12, emProducao: 0,
   };
   readonly acervo = { grid: vi.fn(async () => this.grade), fill: vi.fn<Orchestrator['acervo']['fill']>(async () => {}) };
+  private readonly templateStore = new MemoryTemplateStore();
+  private registry(): ClientesRegistry { return new ClientesRegistry(this.config.BRAIN_DIR); }
+  readonly empresas: Orchestrator['empresas'] = {
+    list: () => this.registry().list(),
+    get: async id => (await this.registry().list()).find(empresa => empresa.id === id),
+    upsert: async input => { const empresa = await this.registry().upsert(input); await seedTemplates(this.templateStore, [empresa], agora); return empresa; },
+    setLogo: async (id, arquivo) => {
+      if (!await this.empresas.get(id)) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
+      const path = `_marcas/${id}/logo.${arquivo.nome.split('.').pop()}`;
+      await mkdir(join(this.config.ACERVO_DIR, '_marcas', id), { recursive: true });
+      await writeFile(join(this.config.ACERVO_DIR, path), arquivo.dados);
+      return this.registry().setLogo(id, path);
+    },
+  };
+  readonly templates: Orchestrator['templates'] = {
+    list: async filtro => (await this.templateStore.list()).filter(t => (!filtro?.empresaId || t.empresaId === filtro.empresaId) && (!filtro?.procedimento || t.procedimento === filtro.procedimento) && (!filtro?.familia || t.familia === filtro.familia)),
+    get: id => this.templateStore.get(id),
+    save: async (id, input) => {
+      const previous = await this.templateStore.get(id);
+      if (!previous) throw new OrchestratorError('NOT_FOUND', 'Template não encontrado.', 404);
+      const template = { ...previous, ...input, atualizadoEm: agora };
+      await this.templateStore.save(template); return template;
+    },
+  };
   constructor(config = OrchestratorConfigSchema.parse({})) { this.config = config; }
   readonly submitDemand = vi.fn(async (input: SubmitDemandInput): Promise<Demanda> => {
     const demanda = criarDemanda({ id: 'DEM-0002', estado: 'CLASSIFICADA', ...input });
@@ -67,7 +95,7 @@ export class FakeOrchestrator implements Orchestrator {
   });
   readonly triar = vi.fn(async (texto: string): Promise<Triagem> => ({
     id: 'TRI-test', texto, empresa: { id: null, nome: null, cadastrada: false, confianca: 0, rede: null, unidade: null, metodo: 'nenhum' },
-    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste', agenteRegra: true,
+    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste', agenteRegra: true, briefing: [],
     provider: 'mock', modelo: 'heuristica', latenciaMs: 1, tokens: { entrada: 0, saida: 0 }, custo: { usd: 0, brl: 0, cotacaoUsdBrl: 5.5 }, criadoEm: agora,
   }));
   readonly humanReview = vi.fn(async (id: string, feedback: FeedbackHumano): Promise<Demanda> => {

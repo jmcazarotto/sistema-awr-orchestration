@@ -36,6 +36,7 @@ export function domainFailure(error: unknown): ApiFailure | undefined {
   if (error instanceof ApiFailure) return error;
   if (typeof error !== 'object' || error === null || !('code' in error)) return undefined;
   switch (error.code) {
+    case 'VALIDATION_ERROR': return new ApiFailure(400, 'VALIDATION_ERROR', error instanceof Error ? error.message : 'Dados inválidos.');
     case 'UPSTREAM_ERROR': return new ApiFailure(502, 'UPSTREAM_ERROR', 'Falha no classificador Jev.');
     case 'NOT_FOUND': return new ApiFailure(404, 'NOT_FOUND', 'Demanda não encontrada.');
     case 'INVALID_TRANSITION': return new ApiFailure(409, 'INVALID_TRANSITION', 'Operação incompatível com o estado atual da demanda.');

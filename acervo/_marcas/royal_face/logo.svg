@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 250" role="img" aria-label="Royal Face Estética Facial">
+<defs><linearGradient id="gold"><stop stop-color="#c9a45c"/><stop offset="1" stop-color="#e8cf8f"/></linearGradient></defs>
+<g fill="none" stroke="url(#gold)" stroke-width="2.4" stroke-linecap="round"><path d="M239 53a36 36 0 1 0-57 24M219 25c-16 3-21 15-15 24l9 9-7 5 1 10-8 9-16 1"/><path d="M218 32c12 15 8 30 0 43"/></g>
+<text x="210" y="137" text-anchor="middle" fill="#fff7e8" font-family="Georgia,serif" font-size="61" letter-spacing="8">ROYAL</text>
+<text x="211" y="193" text-anchor="middle" fill="url(#gold)" font-family="Brush Script MT,Georgia,serif" font-style="italic" font-size="66">Face</text>
+<text x="210" y="228" text-anchor="middle" fill="#e8cf8f" font-family="Arial,sans-serif" font-size="13" letter-spacing="4">ESTÉTICA FACIAL</text>
+</svg>

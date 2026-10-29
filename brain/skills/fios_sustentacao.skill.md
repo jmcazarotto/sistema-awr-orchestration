@@ -14,18 +14,20 @@ atualizado_em: 2026-10-28
 **Público-alvo:** adultos 35–65 anos (maiores de 18) que percebem perda de definição do contorno e querem opção minimamente invasiva, com avaliação criteriosa. Tom: elegante, técnico, seguro, sem alarmismo.
 
 **Promessa permitida:** informar que existe a técnica, que a **indicação depende de avaliação individual** e que é feita por profissional habilitado; falar em "contorno", "sustentação", "estímulo de colágeno" (apenas de forma informativa), "avaliação".
-**Promessa proibida:** garantia, duração fixa, "efeito lifting", comparação com cirurgia, urgência, preço.
+**Promessa proibida:** garantia, duração fixa, "efeito lifting", comparação com cirurgia, urgência.
 
 ### Compliance (obrigatório)
 
-- **CFM Res. 2.336/2023 (médicos):** antes/depois somente com finalidade **educativa**, consentimento do paciente, mesmas condições de captura, sem sensacionalismo, sem garantia de resultado, sem preço/promoção/sorteio/brinde. Aplicar o mesmo rigor a não médicos (conservador).
+- **CFM Res. 2.336/2023 (médicos):** antes/depois somente com finalidade **educativa**, consentimento do paciente, mesmas condições de captura, sem sensacionalismo, sem garantia de resultado, sem sorteio/brinde. Aplicar o mesmo rigor a não médicos (conservador).
 - **ANVISA:** fios são produtos para saúde registrados; não citar marcas/fabricantes nem alegações terapêuticas não aprovadas (ex.: "rejuvenescimento comprovado", "substitui cirurgia").
 - **CDC / CONAR:** publicidade verdadeira e identificável; sem superlativos comprobatórios; não minimizar riscos nem induzir a erro.
 - **Meta Ads — Saúde e Aparência Pessoal:** sem percepção negativa ("sua face está caída?", "papada?"), sem segmentar defeito em 2ª pessoa, sem promessa milagrosa, sem antes/depois exagerado ou improvável. Antes/depois apenas com diferença **sutil e plausível**; público 18+. Se reprovado, usar `banco_imagem_*`.
 - **Imagens geradas por IA** não representam paciente real: sempre incluir "Imagem ilustrativa." no disclaimer.
 - **Identificação:** nunca inventar CRM/RQE; exibir somente se vier no `{{briefing_cliente}}`.
 
-**Termos e afirmações PROIBIDOS:** "garantido", "garantia", "sem dor", "indolor", "sem cirurgia" como promessa de equivalência, "lifting", "efeito lifting", "definitivo", "para sempre", "milagre", "100%", "instantâneo", "sem risco", "sem recuperação", "volta no tempo", "tira X anos", "o melhor", "promoção", "desconto", "grátis", "brinde", "R$", "parcelado", "papada", "flacidez" em tom de defeito, marcas de fios.
+**Termos e afirmações PROIBIDOS:** "garantido", "garantia", "sem dor", "indolor", "sem cirurgia" como promessa de equivalência, "lifting", "efeito lifting", "definitivo", "para sempre", "milagre", "100%", "instantâneo", "sem risco", "sem recuperação", "volta no tempo", "tira X anos", "o melhor", "grátis", "brinde", "papada", "flacidez" em tom de defeito, marcas de fios.
+
+**Preço e condições comerciais:** permitidos quando vierem do briefing do cliente (ex.: "6x de R$ 99,90", "20% de desconto"). Renderizar exatamente como no briefing, na camada SVG, com destaque legível. Nunca inventar ou alterar valor, parcelamento ou validade.
 
 **Disclaimer obrigatório (texto exato, sempre visível):**
 `Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.`
@@ -91,7 +93,7 @@ COMPOSITION: leave clean, low-detail areas (soft uniform background or gradient)
 
 TEXT POLICY: do NOT draw any letters, numbers, logos, watermarks, captions or fake UI in the image. If the template absolutely requires in-image text, the ONLY allowed strings, in Brazilian Portuguese with exact spelling and accents, are: "{{headline}}", "{{cta}}", "ANTES", "DEPOIS". Never use English words.
 
-NEGATIVE CONSTRAINTS: no needles, threads, cannulas, syringes, gloves or procedure scenes; no blood, bruising, dimpling, puckering, swelling or redness; no stretched or plastic skin; no unrealistic jawline or elongated neck; no distorted ear or jaw; no hair hiding the jawline; no extra, missing or deformed fingers or teeth; no beauty filter; no black background; no price, discount, guarantee or promotional claims; no product brand logos; no surgical comparison.
+NEGATIVE CONSTRAINTS: no needles, threads, cannulas, syringes, gloves or procedure scenes; no blood, bruising, dimpling, puckering, swelling or redness; no stretched or plastic skin; no unrealistic jawline or elongated neck; no distorted ear or jaw; no hair hiding the jawline; no extra, missing or deformed fingers or teeth; no beauty filter; no black background; no guarantee or miraculous claims; no product brand logos; no surgical comparison.
 
 ADJUSTMENTS REQUESTED (apply with priority; empty means none): {{feedback_ajuste}}
 LEARNED RULES (mandatory, never violate): {{aprendizados}}
@@ -100,7 +102,7 @@ LEARNED RULES (mandatory, never violate): {{aprendizados}}
 ## 5. Checklist de Rubrica do Diretor de Arte
 
 - [R01][critico] O disclaimer legal ("Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.") está visível e completo?
-- [R02][critico] A arte está livre de preço, promoção, garantia, promessa de resultado e de comparação com cirurgia (ex.: "garantido", "lifting", "definitivo", "R$")?
+- [R02][critico] A arte está livre de garantia, promessa de resultado e de comparação com cirurgia (ex.: "garantido", "lifting", "definitivo"; preço/parcelamento do briefing são permitidos)?
 - [R03][critico] Todo o texto visível está em português do Brasil, escrito exatamente como esperado, sem erros de ortografia e sem palavras em inglês?
 - [R04][critico] Rosto, mandíbula, orelha e pescoço estão anatomicamente corretos (sem distorção, esticamento artificial, dedos ou dentes deformados)?
 - [R05][critico] Headline, CTA e disclaimer estão legíveis, com contraste suficiente e sem cortes ou sobreposição entre si?

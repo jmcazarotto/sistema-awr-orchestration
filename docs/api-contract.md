@@ -186,3 +186,22 @@ Proteção obrigatória inclusive no Windows: decodificar o path com tratamento 
 - `TRANSICOES_VALIDAS`/`transicaoValida` contêm exatamente as nove arestas de AGENTS.md §3. A escalada forçada do §4 é uma operação administrativa do bus: se precisar sair de outro estado ativo para espera AWR, `TransicaoDemandaSchema` permite esse registro somente com `motivo='hop_limit'`; nunca reabre estado terminal. Não entregar a mensagem recusada, nem criar uma transição normal adicional. `director_attempts` usa a aresta normal a partir de `EM_REVISAO_DIRETOR`.
 - `ReviewResultSchema` valida o JSON de revisão do agente: score [0,1], itens com IDs R/L/G/C, sim/nao e evidência, até três correções. Calcular a aprovação no revisor: todos os críticos sim e pelo menos 80% dos normais sim (sem normais, requisito satisfeito). Escalada não transforma uma revisão reprovada em aprovada.
 - `ArteMetaSchema` discrimina por `ator`: Van Gogh segue o JSON do agent (origem cliente opcional); Monalisa exige origem acervo e `coerenciaColecao`. Nomes e locais de PNG e `.meta.json` permanecem os de AGENTS.md §7.
+
+
+## Empresas e templates por empresa
+
+O cadastro em `brain/clientes.json` é a fonte das empresas. As respostas são validadas pelos schemas compartilhados.
+
+| Método | Rota | Entrada | Resposta |
+|---|---|---|---|
+| GET | `/api/empresas` | — | `{ empresas: Empresa[] }` |
+| GET | `/api/empresas/:id` | ID da empresa | `{ empresa: Empresa }` |
+| POST | `/api/empresas` | `EmpresaInputSchema` (JSON; upsert por ID) | `{ empresa: Empresa }` |
+| POST | `/api/empresas/:id/logo` | multipart/form-data, campo `arquivo`: PNG, JPG, SVG ou WebP, até 2 MB | `{ empresa: Empresa }` |
+| GET | `/api/templates` | query opcional `empresaId`, `procedimento`, `familia` (`antes_depois` ou `banco_imagem`) | `{ templates: TemplateArte[] }` |
+| GET | `/api/templates/:id` | ID do template | `{ template: TemplateArte }` |
+| PUT | `/api/templates/:id` | `SaveTemplateRequestSchema`: `nome`, `fundo`, `elementos` | `{ template: TemplateArte }` |
+
+Todas essas operações respondem 200 em caso de sucesso. Recursos desconhecidos respondem 404 `NOT_FOUND`; entrada ou upload inválido responde 400 `VALIDATION_ERROR`. Elementos precisam ter IDs únicos e ao menos sobrepor o canvas; `atualizadoEm` é definido pelo relógio do servidor. Logos ficam em `_marcas/<empresaId>/logo.<ext>` e são servidas por `GET /acervo/*` (incluindo SVG e WebP).
+
+Na inicialização e após upsert da empresa, cada procedimento recebe os quatro slots oficiais de templates. Seeds só escrevem IDs ausentes, preservando edições existentes em `DATA_DIR/templates/<id>.json`.

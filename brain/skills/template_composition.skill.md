@@ -149,7 +149,7 @@ CLEAN ZONES: keep the regions reserved for headline, CTA, seal, logo, disclaimer
 
 TEXT POLICY: draw NO letters, numbers, logos, watermarks or captions. If text is unavoidable, the ONLY allowed strings, in Brazilian Portuguese with exact spelling, are: "{{headline}}", "{{cta}}", "ANTES", "DEPOIS". Never use English words.
 
-NEGATIVE CONSTRAINTS: no needles, syringes, threads, blood, bruising, swelling; no distorted anatomy; no extra or deformed fingers or teeth; no plastic skin or beauty filter; no black background; no borders, frames or UI; no price or promotional claims.
+NEGATIVE CONSTRAINTS: no needles, syringes, threads, blood, bruising, swelling; no distorted anatomy; no extra or deformed fingers or teeth; no plastic skin or beauty filter; no black background; no borders, frames or UI; no guarantee or miraculous claims.
 
 ADJUSTMENTS REQUESTED (apply with priority; empty means none): {{feedback_ajuste}}
 LEARNED RULES (mandatory, never violate): {{aprendizados}}

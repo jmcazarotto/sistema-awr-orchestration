@@ -1,12 +1,13 @@
 import { nanoid } from 'nanoid';
-import { CriadorIdSchema, ProcedimentoSchema, TipoTemplateSchema, TriagemRequestSchema, TriagemSchema } from '../../shared/types';
-import type { OrchestratorConfig, Triagem } from '../../shared/types';
+import { BriefingTipoSchema, CriadorIdSchema, ProcedimentoSchema, TipoTemplateSchema, TriagemRequestSchema, TriagemSchema } from '../../shared/types';
+import type { BriefingItem, OrchestratorConfig, Triagem } from '../../shared/types';
 import { ClientesRegistry } from '../brain/ClientesRegistry';
 import type { Cliente } from '../brain/ClientesRegistry';
 import { matchEmpresa, unidadeCitada } from '../brain/EmpresaMatcher';
 import type { EventBus } from '../core/EventBus';
 import { classifyMock } from './FastClassifier';
 import { criteriosAgente, decidirAgentePorRegra } from './agenteRouting';
+import { criteriosTrecho, segmentar, tipoHeuristico, tipoPorRegra } from './briefingExtractor';
 import type { JevClient, JevQuestions } from './JevClient';
 
 // Descriptions distilled from the procedure skills §1 and template_composition §3.
@@ -34,6 +35,8 @@ export function extractEmpresa(texto: string): string | null {
 }
 
 type Empresa = Triagem['empresa'];
+/** Limite de trechos perguntados ao classificador por triagem (custo/latência). */
+const MAX_TRECHOS = 8;
 /** Rede citada literalmente no texto → confiança 1, sem gastar pergunta no classificador. */
 function empresaPorCadastro(texto: string, clientes: Cliente[]): Empresa | null {
   const match = matchEmpresa(texto, clientes);
@@ -65,15 +68,17 @@ export class TriagemService {
     const modelo = real ? this.config.JEV_MODEL : 'heuristica';
     this.bus.emit({ type: 'triagem.started', payload: { triagemId: id, texto, provider, modelo } });
     const clientes = await new ClientesRegistry(this.config.BRAIN_DIR).list();
-    let fields: Pick<Triagem, 'empresa' | 'procedimento' | 'procedimentoConfianca' | 'tipoTemplate' | 'tipoTemplateConfianca' | 'agente' | 'agenteConfianca' | 'agenteMotivo' | 'agenteRegra' | 'probabilidades' | 'tokens' | 'latenciaMs' | 'modelo'>;
+    let fields: Pick<Triagem, 'empresa' | 'procedimento' | 'procedimentoConfianca' | 'tipoTemplate' | 'tipoTemplateConfianca' | 'agente' | 'agenteConfianca' | 'agenteMotivo' | 'agenteRegra' | 'probabilidades' | 'briefing' | 'tokens' | 'latenciaMs' | 'modelo'>;
     if (real && this.jev) {
       const porCadastro = empresaPorCadastro(texto, clientes);
       const agentePorRegra = decidirAgentePorRegra(texto, Boolean(porCadastro));
+      const trechos = segmentar(texto).slice(0, MAX_TRECHOS).map(texto => ({ texto, regra: tipoPorRegra(texto) }));
       const questions: JevQuestions = {
         procedimento: { type: 'choice', instructions: 'Qual procedimento estético é solicitado no texto?', criteria: procedimentos },
         ...(porCadastro ? {} : { empresa: { type: 'choice' as const, instructions: 'Para qual rede/franquia de clínicas é a arte? Considere variações de grafia do nome. Se o texto não cita nenhuma rede cadastrada, escolha nao_identificada. Não associe uma clínica desconhecida a uma cadastrada.', criteria: { ...Object.fromEntries(clientes.map(cliente => [cliente.id, `${cliente.nome}${cliente.tipo === 'franquia' ? ' (franquia)' : ''}; nomes conhecidos: ${[cliente.nome, ...cliente.aliases].join(', ')}${cliente.unidades.length ? `; unidades: ${cliente.unidades.map(u => u.cidade).join(', ')}` : ''}`])), nao_identificada: 'Empresa não citada ou não cadastrada entre as opções.' } } }),
         tipo_arte: { type: 'choice', instructions: 'Qual layout de arte foi solicitado? Use a orientação descrita; para antes e depois sem orientação use lado a lado. Post institucional usa foto em cima e painel embaixo.', criteria: templates },
         // Sempre perguntado (mesmo com regra) para exibir a distribuição completa na UI.
+        ...Object.fromEntries(trechos.flatMap((t, i) => t.regra ? [] : [[`trecho_${i}`, { type: 'choice' as const, instructions: `O trecho "${t.texto}" é só identificação do pedido ou é briefing para a criação da arte? Se for briefing, de que tipo?`, criteria: criteriosTrecho }]])),
         agente: { type: 'choice', instructions: 'Qual agente de arte deve produzir? Pedido pontual de cliente/clínica/unidade vai para van_gogh; abastecimento rotineiro do acervo (peças de estoque), mesmo citando a rede, vai para monalisa.', criteria: criteriosAgente },
       };
       const response = await this.jev.ask(texto, questions);
@@ -87,6 +92,11 @@ export class TriagemService {
         procedimento: ProcedimentoSchema.parse(procedimento!.choice), procedimentoConfianca: procedimento!.confidence,
         tipoTemplate: TipoTemplateSchema.parse(tipo_arte!.choice), tipoTemplateConfianca: tipo_arte!.confidence,
         ...(agentePorRegra ? porRegra(agentePorRegra) : { agente: CriadorIdSchema.parse(agente!.choice), agenteConfianca: agente!.confidence, agenteMotivo: 'Decidido pelo classificador (texto sem sinal claro de cliente ou de acervo).', agenteRegra: false }),
+        briefing: trechos.flatMap((t, i): BriefingItem[] => {
+          if (t.regra) return [{ texto: t.texto, ...t.regra, confianca: 1, metodo: 'regra' }];
+          const a = response.answers[`trecho_${i}`];
+          return a && a.choice !== 'pedido' ? [{ texto: t.texto, tipo: BriefingTipoSchema.parse(a.choice), confianca: a.probabilities[a.choice] ?? a.confidence, metodo: 'ia' }] : [];
+        }),
         probabilidades: { procedimento: procedimento!.probabilities, tipoTemplate: tipo_arte!.probabilities, agente: agente!.probabilities, ...(empresa ? { empresa: empresa.probabilities } : {}) },
         tokens: { entrada: response.usage.input_tokens, saida: response.usage.output_tokens }, latenciaMs: response.latenciaMs, modelo: response.model,
       };
@@ -97,7 +107,13 @@ export class TriagemService {
       const empresaMock = empresaPorCadastro(texto, clientes) ?? empresaPorExtracao(texto);
       const agenteMock = decidirAgentePorRegra(texto, empresaMock.cadastrada) ?? { agente: 'van_gogh' as const, confianca: 0.5, motivo: 'Sem sinal claro: padrão demanda de cliente.' };
       const probabilidades = { procedimento: distribuicao(Object.keys(procedimentos) as (keyof typeof procedimentos)[], mock.procedimento, mock.confianca), tipoTemplate: distribuicao(Object.keys(templates) as (keyof typeof templates)[], mock.tipoTemplate, mock.confianca), agente: distribuicao(['van_gogh', 'monalisa'] as const, agenteMock.agente, agenteMock.confianca) };
-      fields = { empresa: empresaMock, ...porRegra(agenteMock), probabilidades, procedimento: mock.procedimento, procedimentoConfianca: mock.confianca, tipoTemplate: mock.tipoTemplate, tipoTemplateConfianca: mock.confianca, tokens: { entrada: 0, saida: 0 }, latenciaMs: performance.now() - start, modelo };
+      const briefing = segmentar(texto).slice(0, MAX_TRECHOS).flatMap((trecho): BriefingItem[] => {
+        const regra = tipoPorRegra(trecho);
+        if (regra) return [{ texto: trecho, ...regra, confianca: 1, metodo: 'regra' }];
+        const tipo = tipoHeuristico(trecho);
+        return tipo === 'pedido' ? [] : [{ texto: trecho, tipo, confianca: 0.6, metodo: 'heuristica' }];
+      });
+      fields = { empresa: empresaMock, ...porRegra(agenteMock), probabilidades, briefing, procedimento: mock.procedimento, procedimentoConfianca: mock.confianca, tipoTemplate: mock.tipoTemplate, tipoTemplateConfianca: mock.confianca, tokens: { entrada: 0, saida: 0 }, latenciaMs: performance.now() - start, modelo };
     }
     const usd = (fields.tokens.entrada * this.config.JEV_PRICE_INPUT_USD_PER_MTOK + fields.tokens.saida * this.config.JEV_PRICE_OUTPUT_USD_PER_MTOK) / 1e6;
     const triagem = TriagemSchema.parse({ id, texto, ...fields, familiaArte: fields.tipoTemplate.startsWith('antes_depois') ? 'antes_depois' : 'banco_imagem', provider, custo: { usd, brl: usd * this.config.USD_BRL, cotacaoUsdBrl: this.config.USD_BRL }, criadoEm: this.bus.clock.now().toISOString() });

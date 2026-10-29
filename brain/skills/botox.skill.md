@@ -14,18 +14,20 @@ atualizado_em: 2026-10-28
 **Público-alvo:** adultos 30–60 anos (maiores de 18) que buscam aparência descansada e natural, valorizam segurança, avaliação médica e discrição. Tom: sereno, técnico-acolhedor, confiável.
 
 **Promessa permitida:** informar sobre o procedimento, que exige **avaliação individual** e profissional habilitado; falar em "expressão natural", "aparência descansada", "cuidado com a pele", "avaliação".
-**Promessa proibida:** garantia, duração fixa, eliminação de rugas, rejuvenescimento em anos, urgência, preço.
+**Promessa proibida:** garantia, duração fixa, eliminação de rugas, rejuvenescimento em anos, urgência.
 
 ### Compliance (obrigatório)
 
-- **CFM Res. 2.336/2023 (médicos):** antes/depois somente com finalidade **educativa**, consentimento do paciente, condições idênticas de captura, sem sensacionalismo, sem garantia de resultado, sem preço/promoção/sorteio/brinde. Aplicar o mesmo rigor a não médicos (conservador).
+- **CFM Res. 2.336/2023 (médicos):** antes/depois somente com finalidade **educativa**, consentimento do paciente, condições idênticas de captura, sem sensacionalismo, sem garantia de resultado, sem sorteio/brinde. Aplicar o mesmo rigor a não médicos (conservador).
 - **ANVISA (RDC 96/2008) — medicamento sob prescrição:** a toxina botulínica é medicamento de venda sob prescrição; **proibido** divulgar ao público leigo marca comercial (ex.: "Botox®" como produto), dose, unidades ou fabricante. Usar o termo genérico **"toxina botulínica"** e focar no procedimento/avaliação. O nome "Botox" só aparece se estiver no `{{briefing_cliente}}` e, ainda assim, preferir o termo genérico.
 - **CDC / CONAR:** publicidade verdadeira e identificável; sem superlativos comprobatórios.
 - **Meta Ads — Saúde e Aparência Pessoal:** sem percepção negativa ("você tem rugas?", "cansada de parecer mais velha?"), sem segmentar defeito em 2ª pessoa, sem promessa milagrosa, sem antes/depois exagerado. Antes/depois apenas com diferença **sutil e plausível**; público 18+. Se reprovado, usar `banco_imagem_*`.
 - **Imagens geradas por IA** não representam paciente real: sempre incluir "Imagem ilustrativa." no disclaimer.
 - **Identificação:** nunca inventar CRM/RQE; exibir somente se vier no `{{briefing_cliente}}`.
 
-**Termos e afirmações PROIBIDOS:** "garantido", "garantia", "sem dor", "indolor", "definitivo", "elimina rugas", "acaba com as rugas", "apaga", "rejuvenesça X anos", "milagre", "100%", "instantâneo", "sem risco", "o melhor", "promoção", "desconto", "grátis", "brinde", "R$", "parcelado", "unidades", "dose", "Botox®" como marca, "flacidez" e "rugas" em tom de defeito, "você tem rugas?".
+**Termos e afirmações PROIBIDOS:** "garantido", "garantia", "sem dor", "indolor", "definitivo", "elimina rugas", "acaba com as rugas", "apaga", "rejuvenesça X anos", "milagre", "100%", "instantâneo", "sem risco", "o melhor", "grátis", "brinde", "unidades", "dose", "Botox®" como marca, "flacidez" e "rugas" em tom de defeito, "você tem rugas?".
+
+**Preço e condições comerciais:** permitidos quando vierem do briefing do cliente (ex.: "6x de R$ 99,90", "20% de desconto"). Renderizar exatamente como no briefing, na camada SVG, com destaque legível. Nunca inventar ou alterar valor, parcelamento ou validade.
 
 **Disclaimer obrigatório (texto exato, sempre visível):**
 `Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.`
@@ -91,7 +93,7 @@ COMPOSITION: leave clean, low-detail areas (soft uniform background or gradient)
 
 TEXT POLICY: do NOT draw any letters, numbers, logos, watermarks, captions or fake UI in the image. If the template absolutely requires in-image text, the ONLY allowed strings, in Brazilian Portuguese with exact spelling and accents, are: "{{headline}}", "{{cta}}", "ANTES", "DEPOIS". Never use English words.
 
-NEGATIVE CONSTRAINTS: no needles, syringes, vials, gloves or injection scenes; no blood, bruising, bumps, swelling or redness; no frozen or porcelain-plastic skin; no drooping or asymmetric eyebrows; no misaligned eyes; no extra, missing or deformed fingers or teeth; no beauty filter; no black background; no exaggerated wrinkles in the BEFORE photo; no price, discount, guarantee or promotional claims; no product brand logos.
+NEGATIVE CONSTRAINTS: no needles, syringes, vials, gloves or injection scenes; no blood, bruising, bumps, swelling or redness; no frozen or porcelain-plastic skin; no drooping or asymmetric eyebrows; no misaligned eyes; no extra, missing or deformed fingers or teeth; no beauty filter; no black background; no exaggerated wrinkles in the BEFORE photo; no guarantee or miraculous claims; no product brand logos.
 
 ADJUSTMENTS REQUESTED (apply with priority; empty means none): {{feedback_ajuste}}
 LEARNED RULES (mandatory, never violate): {{aprendizados}}
@@ -100,7 +102,7 @@ LEARNED RULES (mandatory, never violate): {{aprendizados}}
 ## 5. Checklist de Rubrica do Diretor de Arte
 
 - [R01][critico] O disclaimer legal ("Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.") está visível e completo?
-- [R02][critico] A arte está livre de preço, promoção, garantia, promessa de resultado e de marca/dose do produto (ex.: "garantido", "elimina rugas", "Botox®", "unidades", "R$")?
+- [R02][critico] A arte está livre de garantia, promessa de resultado e de marca/dose do produto (ex.: "garantido", "elimina rugas", "Botox®", "unidades"; preço/parcelamento do briefing são permitidos)?
 - [R03][critico] Todo o texto visível está em português do Brasil, escrito exatamente como esperado, sem erros de ortografia e sem palavras em inglês?
 - [R04][critico] O rosto, os olhos e as sobrancelhas estão anatomicamente corretos (simétricos, alinhados, sem dedos ou dentes deformados)?
 - [R05][critico] Headline, CTA e disclaimer estão legíveis, com contraste suficiente e sem cortes ou sobreposição entre si?

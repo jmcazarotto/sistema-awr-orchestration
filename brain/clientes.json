@@ -3,10 +3,36 @@
     "id": "royal_face",
     "nome": "Royal Face",
     "tipo": "franquia",
-    "aliases": ["Royal Face", "RoyalFace"],
+    "aliases": [
+      "Royal Face",
+      "RoyalFace"
+    ],
     "unidades": [
-      { "id": "royal_face_castanhal", "nome": "Royal Face Castanhal", "cidade": "Castanhal", "uf": "PA", "aliases": [] },
-      { "id": "royal_face_maringa", "nome": "Royal Face Maringá", "cidade": "Maringá", "uf": "PR", "aliases": [] }
-    ]
+      {
+        "id": "royal_face_castanhal",
+        "nome": "Royal Face Castanhal",
+        "cidade": "Castanhal",
+        "uf": "PA",
+        "aliases": []
+      },
+      {
+        "id": "royal_face_maringa",
+        "nome": "Royal Face Maringá",
+        "cidade": "Maringá",
+        "uf": "PR",
+        "aliases": []
+      }
+    ],
+    "procedimentos": [
+      "preenchimento_labial",
+      "botox",
+      "fios_sustentacao"
+    ],
+    "logo": "_marcas/royal_face/logo.svg",
+    "cores": {
+      "primaria": "#c9a45c",
+      "secundaria": "#3f3d3b",
+      "texto": "#ffffff"
+    }
   }
 ]

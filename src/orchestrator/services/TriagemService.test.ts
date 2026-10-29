@@ -11,6 +11,17 @@ import { TriagemService } from './TriagemService';
 function answer(choice: string, keys: string[], confidence = 0.9) {
   return { type: 'choice', choice, confidence, probabilities: Object.fromEntries(keys.map(key => [key, key === choice ? 1 : 0])) };
 }
+/** Responde como o Jev: usa o corpo base e completa perguntas extras (trechos de briefing) com "pedido". */
+function respond(base: { answers: Record<string, unknown> }) {
+  return async (_url: unknown, init?: RequestInit) => {
+    const questions = JSON.parse(String(init?.body ?? '{}')).questions ?? {};
+    const answers: Record<string, unknown> = { ...base.answers };
+    for (const [name, q] of Object.entries(questions as Record<string, { criteria: Record<string, string> }>)) {
+      if (!answers[name]) { const keys = Object.keys(q.criteria); answers[name] = answer(keys.includes('pedido') ? 'pedido' : keys[0]!, keys); }
+    }
+    return Response.json({ ...base, answers });
+  };
+}
 export function jevResponse(empresa = 'royal_face', confidence = 0.9) {
   return { model: 'jev-test', answers: {
     procedimento: answer('botox', ['botox', 'preenchimento_labial', 'fios_sustentacao']),
@@ -25,7 +36,7 @@ const response = () => ({ model: 'jev-test', answers: { topic: answer('sim', ['s
 
 describe('JevClient', () => {
   it('mede chamada e parse com clock injetável e aplica backoff em 429/529', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('', { status: 429 })).mockResolvedValueOnce(new Response('', { status: 529 })).mockResolvedValueOnce(Response.json(response()));
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(new Response('', { status: 429 })).mockResolvedValueOnce(new Response('', { status: 529 })).mockImplementationOnce(respond(response()));
     const sleep = vi.fn(async (_ms: number) => {});
     const now = vi.fn().mockReturnValueOnce(100).mockReturnValueOnce(380);
     expect((await new JevClient(config, 'private-key', { fetch: fetcher, sleep, now }).ask('texto', questions)).latenciaMs).toBe(280);
@@ -74,7 +85,7 @@ describe('JevClient', () => {
 
 describe('TriagemService e integração', () => {
   it('envia as três perguntas numa chamada, calcula custos, emite eventos e não produz arte', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(jevResponse()));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(respond(jevResponse()));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev', JEV_PRICE_INPUT_USD_PER_MTOK: 2, JEV_PRICE_OUTPUT_USD_PER_MTOK: 4, USD_BRL: 5 }, { jevApiKey: 'private-key', fetch: fetcher });
     try {
       const before = f.bus.snapshot();
@@ -89,7 +100,7 @@ describe('TriagemService e integração', () => {
       const body = JSON.parse(init!.body as string);
       expect(body.state).toBe(result.texto); expect(body.model).toBe('jev-latest');
       // empresa citada literalmente → resolvida pelo cadastro, sem pergunta ao classificador
-      expect(Object.keys(body.questions)).toEqual(['procedimento', 'tipo_arte', 'agente']);
+      expect(Object.keys(body.questions).filter(k => !k.startsWith('trecho_'))).toEqual(['procedimento', 'tipo_arte', 'agente']);
       expect(Object.keys(body.questions.procedimento.criteria)).toEqual(['preenchimento_labial', 'botox', 'fios_sustentacao']);
       expect(Object.keys(body.questions.tipo_arte.criteria)).toHaveLength(4);
       expect(f.bus.history(10).map(event => event.type)).toEqual(['triagem.started', 'triagem.result', 'log']);
@@ -97,13 +108,13 @@ describe('TriagemService e integração', () => {
     } finally { await f.close(); }
   });
   it.each([['nao_identificada', 0.95], ['royal_face', 0.2]] as const)('extrai empresa desconhecida (%s)', async (empresa, confianca) => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(Response.json(jevResponse(empresa, confianca)));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(respond(jevResponse(empresa, confianca)));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try { expect((await f.app.triar('post institucional de fios de sustentação para a Clínica Aurora')).empresa).toMatchObject({ id: null, nome: 'Clínica Aurora', cadastrada: false }); }
     finally { await f.close(); }
   });
   it('identifica franquia + unidade pelo cadastro com confiança 1 (caso Royal Face Maringá)', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(jevResponse('nao_identificada', 0.84)));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(respond(jevResponse('nao_identificada', 0.84)));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try {
       expect((await f.app.triar('arte de botox para Royal Face Maringá antes e depois')).empresa).toEqual({ id: 'royal_face_maringa', nome: 'Royal Face Maringá', cadastrada: true, confianca: 1, metodo: 'cadastro', rede: { id: 'royal_face', nome: 'Royal Face' }, unidade: { id: 'royal_face_maringa', nome: 'Maringá', cadastrada: true } });
@@ -113,7 +124,7 @@ describe('TriagemService e integração', () => {
   });
   it('roteia o agente: cliente → Van Gogh por regra, acervo → Monalisa por regra, ambíguo → classificador', async () => {
     const withAgente = (agente: string) => { const body = jevResponse(); return { ...body, answers: { ...body.answers, agente: answer(agente, ['van_gogh', 'monalisa'], 0.88) } }; };
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(withAgente('monalisa')));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(respond(withAgente('monalisa')));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try {
       expect(await f.app.triar('recebemos uma demanda de cliente da unidade Royal Face Colombo para a criação de antes e depois')).toMatchObject({ agente: 'van_gogh', agenteConfianca: 1, empresa: { nome: 'Royal Face Colombo' } });
@@ -124,7 +135,7 @@ describe('TriagemService e integração', () => {
     } finally { await f.close(); }
   });
   it('sem citação literal, pergunta a rede ao classificador e aceita só com confiança ≥ 0,7', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(jevResponse('royal_face', 0.92))).mockResolvedValueOnce(Response.json(jevResponse('royal_face', 0.5)));
+    const fetcher = vi.fn<typeof fetch>().mockImplementationOnce(respond(jevResponse('royal_face', 0.92))).mockImplementationOnce(respond(jevResponse('royal_face', 0.5)));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try {
       expect((await f.app.triar('antes e depois de botox para a Roial Fase de Castanhal')).empresa).toMatchObject({ id: 'royal_face_castanhal', nome: 'Royal Face Castanhal', cadastrada: true, confianca: 0.92, metodo: 'ia' });
@@ -145,7 +156,7 @@ describe('TriagemService e integração', () => {
     } finally { await f.close(); }
   });
   it('FastClassifier preserva restrições e infere clínica na demanda', async () => {
-    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => Response.json(jevResponse()));
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(respond(jevResponse()));
     const f = await fixture({ CLASSIFIER_PROVIDER: 'jev' }, { jevApiKey: 'secret', fetch: fetcher });
     try {
       const service = new TriagemService(f.config, f.bus, new JevClient(f.config, 'secret', { fetch: fetcher }));

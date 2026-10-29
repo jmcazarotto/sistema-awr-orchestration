@@ -1,6 +1,8 @@
-import { PROCEDIMENTOS, PROCEDIMENTO_LABELS, TIPOS_TEMPLATE, SseEnvelopeSchema, OrchestratorConfigSchema, TriagemRequestSchema } from '../../shared/types';
+import { PROCEDIMENTOS, PROCEDIMENTO_LABELS, TIPOS_TEMPLATE, SseEnvelopeSchema, OrchestratorConfigSchema, TriagemRequestSchema, EmpresaInputSchema, SaveTemplateRequestSchema, TemplatesQuerySchema } from '../../shared/types';
 import type { AcervoGrid, Demanda, EstadoDemanda, InboxMessage, Learning, ReviewResult, SkillDetail, SseEvent, SseEnvelope, SubmitDemandInput, Triagem } from '../../shared/types';
 import type { EventHandlers } from '../transport/events';
+import type { Empresa, TemplateArte } from '../../shared/types';
+import { seedEmpresas, seedTemplates } from './mockTemplates';
 
 const now = () => new Date().toISOString();
 const rubric = [{id: 'R01', severidade: 'critico' as const, pergunta: 'A região do procedimento está livre de sobreposições?'}, {id: 'R02', severidade: 'normal' as const, pergunta: 'A hierarquia visual mantém headline e CTA legíveis?'}];
@@ -19,6 +21,8 @@ export function createMockApi() {
   let demandas = [seedDemand(1),seedDemand(2),seedDemand(3,'EM_PRODUCAO'),seedDemand(4,'APROVADA_SALVA_NO_ACERVO')];
   let messages: InboxMessage[] = demandas.flatMap(d => d.stagingPath ? [{ id:`msg-seed-${d.id}`, demandaId:d.id, from:d.criadorAtual!, to:'art_director' as const, hop:d.hop, action:'ARTE_ENTREGUE' as const, createdAt:d.createdAt, payload:{stagingPath:d.stagingPath,versao:d.versaoAtual,promptUsado:'Composição demonstrativa em modo local.',engine:'mock' as const} }] : []);
   let serial=0;
+  let empresas: Empresa[] = seedEmpresas();
+  let templates: TemplateArte[] = seedTemplates();
   const history: SseEnvelope[]=[];
   const listeners = new Set<(e:SseEnvelope)=>void>();
   let channel: BroadcastChannel | null = null;
@@ -81,8 +85,9 @@ export function createMockApi() {
   const response=(data:unknown,status=200)=>new Response(JSON.stringify(data),{status,headers:{'Content-Type':'application/json'}});
   const error=(message:string,status=409,code='INVALID_TRANSITION')=>response({error:{code,message}},status);
   const transport:typeof fetch=async (input,init)=>{
-    const url=new URL(String(input),'http://mock.local');const path=url.pathname;const post=init?.method==='POST';
-    const body=init?.body?JSON.parse(String(init.body)):{};
+    const url=new URL(String(input),'http://mock.local');const path=url.pathname;const post=init?.method==='POST';const put=init?.method==='PUT';
+    const form=init?.body instanceof FormData?init.body:null;
+    const body=init?.body&&!form?JSON.parse(String(init.body)):{};
     if(path==='/api/triagem' && post) {
       const parsed = TriagemRequestSchema.safeParse(body);
       if (!parsed.success) return error('Descreva a demanda com 3 a 4.000 caracteres.',400,'VALIDATION_ERROR');
@@ -99,9 +104,37 @@ export function createMockApi() {
       const unidadeCadastrada = cidade ? ['castanhal','maringá'].includes(cidade.toLowerCase()) : false;
       const nome = royal ? `Royal Face${cidade ? ` ${cidade}` : ''}` : texto.match(/(?:para a|clínica|empresa)\s+(.+)$/i)?.[1] ?? null;
       const usd = 450 * .042 / 1_000_000;
-      const triagem: Triagem = {id,texto,empresa:{id:royal?'royal_face':null,nome,cadastrada:royal,confianca:royal?1:nome?.length ? .5 : 0,rede:royal?{id:'royal_face',nome:'Royal Face'}:null,unidade:cidade?{id:null,nome:cidade,cadastrada:unidadeCadastrada}:null,metodo:royal?'cadastro':nome?'extracao':'nenhum'},procedimento,procedimentoConfianca:.97,tipoTemplate,familiaArte,tipoTemplateConfianca:.95,...(/acervo|abastec/i.test(texto)&&!royal?{agente:'monalisa' as const,agenteConfianca:1,agenteMotivo:'Pedido de abastecimento do acervo → Monalisa.',agenteRegra:true}:{agente:'van_gogh' as const,agenteConfianca:royal?1:.5,agenteMotivo:'Demanda de cliente → Van Gogh.',agenteRegra:royal}),provider:'mock',modelo:'jev-mock',latenciaMs:Math.round(performance.now()-started),tokens:{entrada:400,saida:50},custo:{usd,brl:usd*5.5,cotacaoUsdBrl:5.5},criadoEm:now()};
+      const triagem: Triagem = {id,texto,empresa:{id:royal?'royal_face':null,nome,cadastrada:royal,confianca:royal?1:nome?.length ? .5 : 0,rede:royal?{id:'royal_face',nome:'Royal Face'}:null,unidade:cidade?{id:null,nome:cidade,cadastrada:unidadeCadastrada}:null,metodo:royal?'cadastro':nome?'extracao':'nenhum'},procedimento,procedimentoConfianca:.97,tipoTemplate,familiaArte,tipoTemplateConfianca:.95,briefing:[],...(/acervo|abastec/i.test(texto)&&!royal?{agente:'monalisa' as const,agenteConfianca:1,agenteMotivo:'Pedido de abastecimento do acervo → Monalisa.',agenteRegra:true}:{agente:'van_gogh' as const,agenteConfianca:royal?1:.5,agenteMotivo:'Demanda de cliente → Van Gogh.',agenteRegra:royal}),provider:'mock',modelo:'jev-mock',latenciaMs:Math.round(performance.now()-started),tokens:{entrada:400,saida:50},custo:{usd,brl:usd*5.5,cotacaoUsdBrl:5.5},criadoEm:now()};
       emit({type:'triagem.result',payload:triagem});
       return response({triagem});
+    }
+    if(path==='/api/empresas') {
+      if(!post)return response({empresas});
+      const parsed=EmpresaInputSchema.safeParse(body);if(!parsed.success)return error('Dados da empresa inválidos.',400,'VALIDATION_ERROR');
+      const previous=empresas.find(e=>e.id===parsed.data.id);const empresa:Empresa={...parsed.data,logo:parsed.data.logo===undefined?previous?.logo??null:parsed.data.logo};
+      empresas=previous?empresas.map(e=>e.id===empresa.id?empresa:e):[...empresas,empresa];
+      if(!previous)templates=[...templates,...seedTemplates(empresa.id).filter(t=>empresa.procedimentos.includes(t.procedimento))];
+      return response({empresa},previous?200:201);
+    }
+    const empresaMatch=path.match(/^\/api\/empresas\/([a-z0-9_]+)(\/logo)?$/);
+    if(empresaMatch) {
+      const found=empresas.find(e=>e.id===empresaMatch[1]);if(!found)return error('Empresa não encontrada.',404,'NOT_FOUND');
+      if(!empresaMatch[2])return response({empresa:found});
+      const file=form?.get('arquivo');if(!(file instanceof Blob))return error('Envie a logo no campo "arquivo".',400,'VALIDATION_ERROR');
+      if(file.size>2*1024*1024)return error('A logo deve ter no máximo 2 MB.',400,'VALIDATION_ERROR');
+      const dataUrl=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});
+      const empresa={...found,logo:dataUrl};empresas=empresas.map(e=>e.id===empresa.id?empresa:e);return response({empresa});
+    }
+    if(path==='/api/templates' && !post && !put) {
+      const q=TemplatesQuerySchema.safeParse(Object.fromEntries(url.searchParams));if(!q.success)return error('Filtro inválido.',400,'VALIDATION_ERROR');
+      return response({templates:templates.filter(t=>(!q.data.empresaId||t.empresaId===q.data.empresaId)&&(!q.data.procedimento||t.procedimento===q.data.procedimento)&&(!q.data.familia||t.familia===q.data.familia))});
+    }
+    const templateMatch=path.match(/^\/api\/templates\/([a-z0-9_]+)$/);
+    if(templateMatch) {
+      const found=templates.find(t=>t.id===templateMatch[1]);if(!found)return error('Template não encontrado.',404,'NOT_FOUND');
+      if(!put)return response({template:found});
+      const parsed=SaveTemplateRequestSchema.safeParse(body);if(!parsed.success)return error('Template inválido.',400,'VALIDATION_ERROR');
+      const template={...found,...parsed.data,atualizadoEm:now()};templates=templates.map(t=>t.id===template.id?template:t);return response({template});
     }
     if(path==='/api/config') return response({config:OrchestratorConfigSchema.parse({})});
     if(path==='/api/messages')return response({messages});

@@ -17,6 +17,11 @@ export function SettingsPanel() {
       <label className="setting-row"><span><strong>Duração da animação</strong><small>Tempo para preencher cada dado.</small></span>
         <span className="setting-control"><input type="range" disabled={!s.animacoes} min={SETTINGS_LIMITS.revealMs.min} max={SETTINGS_LIMITS.revealMs.max} step={100} value={s.revealMs} onChange={e=>saveSettings({revealMs:Number(e.target.value)})}/>
           <input type="number" aria-label="Segundos da animação" disabled={!s.animacoes} min={0.2} max={5} step={0.1} value={toS(s.revealMs)} onChange={e=>saveSettings({revealMs:Number(e.target.value)*1000})}/><em>s</em></span></label>
+      <label className="setting-row"><span><strong>Nomes em pop-in</strong><small>Como empresa, unidade, agente de arte, tipo de arte e procedimento aparecem: salto rápido na tela ou digitados letra a letra.</small></span>
+        <span className="setting-control"><select aria-label="Estilo dos nomes" disabled={!s.animacoes} value={s.nomesEstilo} onChange={e=>saveSettings({nomesEstilo:e.target.value as typeof s.nomesEstilo})}><option value="pop">Pop-in (pulo rápido)</option><option value="digitar">Digitado</option></select></span></label>
+      <label className="setting-row"><span><strong>Duração da verificação do acervo</strong><small>Tempo mínimo da etapa "Verificando o acervo…" quando a demanda é de abastecimento (Monalisa).</small></span>
+        <span className="setting-control"><input type="range" min={SETTINGS_LIMITS.acervoCheckMs.min} max={SETTINGS_LIMITS.acervoCheckMs.max} step={500} value={s.acervoCheckMs} onChange={e=>saveSettings({acervoCheckMs:Number(e.target.value)})}/>
+          <input type="number" aria-label="Segundos da verificação do acervo" min={0} max={10} step={0.5} value={toS(s.acervoCheckMs)} onChange={e=>saveSettings({acervoCheckMs:Number(e.target.value)*1000})}/><em>s</em></span></label>
     </div>
     <div className="form-footer"><span className="muted">Padrão: etapa visual {toS(DEFAULT_SETTINGS.triagemMinMs)} s · animação {toS(DEFAULT_SETTINGS.revealMs)} s.</span><button className="button outline" onClick={()=>saveSettings(DEFAULT_SETTINGS)}>Restaurar padrão</button></div>
   </section></div>;

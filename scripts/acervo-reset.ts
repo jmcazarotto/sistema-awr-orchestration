@@ -1,4 +1,4 @@
-// Limpa _staging e as pastas finais dos procedimentos (mantém _references e .gitkeep).
+// Limpa _staging e as pastas finais dos procedimentos (mantém _references, _marcas e .gitkeep).
 import { readdir, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import 'dotenv/config';
