@@ -1,5 +1,10 @@
 import type { ElementoEstilo, ElementoTemplate, ElementoTipo } from '../../shared/types';
 
+/** Copia somente o estilo; o conteúdo e a geometria continuam pertencendo ao destino. */
+export function aplicarEstilo(elemento: ElementoTemplate, estilo: ElementoEstilo): ElementoTemplate {
+  return elemento.bloqueado ? elemento : { ...elemento, estilo: structuredClone(estilo) };
+}
+
 /* Lógica pura do editor visual de templates (sem DOM) — testada em templateEditor.test.ts. */
 
 export interface Rect { x: number; y: number; w: number; h: number }

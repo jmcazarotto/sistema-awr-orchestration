@@ -15,9 +15,9 @@ export function createRuntime(api: ApiClient, connect: (handlers: EventHandlers)
     if (refreshing) { refreshAgain = true; return; }
     refreshing = true;
     try {
-      const [demands, messages, acervo, skills, config] = await Promise.all([api.demandas(), api.messages(), api.acervo(), api.skills(), api.config()]);
+      const [demands, messages, acervo, skills, config, agentes] = await Promise.all([api.demandas(), api.messages(), api.acervo(), api.skills(), api.config(), api.agentes().catch(() => ({ pausados: [] }))]);
       if (!stopped) store.update(state => {
-        let next: AppState = {...state, demandas: demands.demandas, messages: messages.messages, acervo, skills: skills.skills, config: config.config, loading: false, error: null};
+        let next: AppState = {...state, demandas: demands.demandas, messages: messages.messages, acervo, skills: skills.skills, config: config.config, pausados: agentes.pausados, loading: false, error: null};
         // Events arriving while GETs were in flight must win over those snapshots.
         for (const event of buffered) next = applyEvent(next, event);
         return next;

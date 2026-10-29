@@ -9,7 +9,7 @@ import { ApprovalPage } from './pages/ApprovalPage';
 import { AcervoPage } from './pages/AcervoPage';
 import { BrainPage } from './pages/BrainPage';
 import { LogsPage } from './pages/LogsPage';
-import { EmpresasPage } from './pages/EmpresasPage';
+import { EmpresasPage, EmpresaDetailPage } from './pages/EmpresasPage';
 import { TemplatesPage } from './pages/TemplatesPage';
 import { TemplateEditorPage } from './pages/TemplateEditorPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -35,6 +35,7 @@ export function App(){
   else if(path==='/demandas')page=<DemandsPage key={hash} initialFilter={new URLSearchParams(hash.split('?')[1]).get('estado')??''}/>;
   else if(path==='/aprovacoes'||approvalId)page=<ApprovalPage id={approvalId}/>;
   else if(path==='/acervo')page=<AcervoPage/>;
+  else if(path.startsWith('/empresas/'))page=<EmpresaDetailPage id={decodeURIComponent(path.slice('/empresas/'.length))} key={path}/>;
   else if(path==='/empresas')page=<EmpresasPage/>;
   else if(path==='/templates')page=<TemplatesPage query={new URLSearchParams(hash.split('?')[1])}/>;
   else if(templateId)page=<TemplateEditorPage id={templateId} key={templateId}/>;

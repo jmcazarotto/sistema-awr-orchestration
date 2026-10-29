@@ -8,7 +8,7 @@ export const seedEmpresas = (): Empresa[] => [{
     { id: 'castanhal', nome: 'Royal Face Castanhal', cidade: 'Castanhal', uf: 'PA', aliases: [] },
     { id: 'maringa', nome: 'Royal Face Maringá', cidade: 'Maringá', uf: 'PR', aliases: [] },
   ],
-  procedimentos: [...PROCEDIMENTOS], logo: null, cores: { primaria: '#c9a45c', secundaria: '#3f3d3b', texto: '#ffffff' },
+  procedimentos: [...PROCEDIMENTOS], logo: null, logos: { claro: null, escuro: null }, cores: { primaria: '#c9a45c', secundaria: '#3f3d3b', texto: '#ffffff' },
 }];
 
 const TEXTOS: Record<Procedimento, { titulo: string; sub: string; destaque: string; tamSub: number }> = {

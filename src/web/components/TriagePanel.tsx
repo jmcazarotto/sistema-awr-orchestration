@@ -1,3 +1,4 @@
+import { AgentAvatar } from './AgentAvatar';
 import { useEffect, useRef, useState } from 'react';
 import { PROCEDIMENTO_LABELS } from '../../shared/types';
 import type { BriefingItem, BriefingTipo, Triagem } from '../../shared/types';
@@ -64,10 +65,10 @@ function TriageResults({result}:{result:Triagem}) {
       <p className="muted">Certeza do modelo: <CountPct value={result.tipoTemplateConfianca} delay={delay(2)}/></p>
       <ProbBars index={2} probs={result.probabilidades?.tipoTemplate} escolha={result.tipoTemplate} label={k=>templateLabel(k as Triagem['tipoTemplate'])}/>
     </Field></RevealCard>}
-    <RevealCard index={abastecimento?2:3}><Field index={abastecimento?2:3} eyebrow="Agente de arte" title={actorLabels[result.agente] ?? result.agente}>
+    <RevealCard index={abastecimento?2:3}><Field index={abastecimento?2:3} eyebrow="Agente de arte" title={actorLabels[result.agente] ?? result.agente} avatar={<AgentAvatar id={result.agente} size={64} active className="avatar-pop"/>}>
       <Badge active>{result.agente==='monalisa'?'abastecimento do acervo':'demanda de cliente'}</Badge><p>{result.agenteMotivo}</p>
       <p className="muted">{result.agenteRegra ? <>Regra aplicada: <CountPct value={1} delay={delay(abastecimento?2:3)}/></> : <>Certeza do modelo: <CountPct value={result.agenteConfianca} delay={delay(abastecimento?2:3)}/></>}</p>
-      <ProbBars index={abastecimento?2:3} titulo={result.agenteRegra ? 'Leitura do classificador' : undefined} probs={result.probabilidades?.agente} escolha={result.agente} label={k=>actorLabels[k] ?? k}/>
+      <ProbBars index={abastecimento?2:3} titulo={result.agenteRegra ? 'Leitura do classificador' : undefined} probs={result.probabilidades?.agente} escolha={result.agente} label={k=>actorLabels[k] ?? k} icon={k=><AgentAvatar id={k} size={20}/>}/>
     </Field></RevealCard>
     <BriefingCard index={abastecimento?3:4} itens={result.briefing ?? []} agente={actorLabels[result.agente] ?? result.agente}/>
   </div>;
@@ -88,17 +89,18 @@ function BriefingCard({index,itens,agente}:{index:number;itens:BriefingItem[];ag
   </div></RevealCard>;
 }
 
-function Field({index,eyebrow,title,children}:{index:number;eyebrow:string;title:string;children:React.ReactNode}) {
-  return <><span className="eyebrow">{eyebrow}</span><h2><NameText text={title} delay={useRevealDelay(index)}/></h2>{children}</>;
+function Field({index,eyebrow,title,avatar,children}:{index:number;eyebrow:string;title:string;avatar?:React.ReactNode;children:React.ReactNode}) {
+  const head = <><span className="eyebrow">{eyebrow}</span><h2><NameText text={title} delay={useRevealDelay(index)}/></h2></>;
+  return <>{avatar ? <div className="field-head">{avatar}<div>{head}</div></div> : head}{children}</>;
 }
 
 /** Probabilidade de cada opção segundo o classificador, em ordem decrescente, com barras preenchendo. */
-function ProbBars({index,probs,escolha,label,titulo='Probabilidade por opção'}:{index:number;probs?:Record<string,number>;escolha:string;label:(k:string)=>string;titulo?:string}) {
+function ProbBars({index,probs,escolha,label,icon,titulo='Probabilidade por opção'}:{index:number;probs?:Record<string,number>;escolha:string;label:(k:string)=>string;icon?:(k:string)=>React.ReactNode;titulo?:string}) {
   const delay = useRevealDelay(index);
   if (!probs || !Object.keys(probs).length) return null;
-  return <div className="prob-bars"><span className="eyebrow">{titulo}</span><ul>{Object.entries(probs).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=><ProbRow key={k} chosen={k===escolha} label={label(k)} value={v} delay={delay+100+i*60}/>)}</ul></div>;
+  return <div className="prob-bars"><span className="eyebrow">{titulo}</span><ul>{Object.entries(probs).sort((a,b)=>b[1]-a[1]).map(([k,v],i)=><ProbRow key={k} chosen={k===escolha} label={label(k)} icon={icon?.(k)} value={v} delay={delay+100+i*60}/>)}</ul></div>;
 }
-function ProbRow({chosen,label,value,delay}:{chosen:boolean;label:string;value:number;delay:number}) {
+function ProbRow({chosen,label,icon,value,delay}:{chosen:boolean;label:string;icon?:React.ReactNode;value:number;delay:number}) {
   const width = useFill(value, delay);
-  return <li className={chosen?'chosen':''} title={`${label}: ${pctTxt(value)}`}><span className="prob-label">{label}</span><span className="prob-track"><span className="prob-fill" style={{width}}/></span><span className="prob-value"><CountPct value={value} delay={delay}/></span></li>;
+  return <li className={chosen?'chosen':''} title={`${label}: ${pctTxt(value)}`}><span className="prob-label">{icon}{label}</span><span className="prob-track"><span className="prob-fill" style={{width}}/></span><span className="prob-value"><CountPct value={value} delay={delay}/></span></li>;
 }

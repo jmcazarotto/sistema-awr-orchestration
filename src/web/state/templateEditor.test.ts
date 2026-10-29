@@ -1,4 +1,19 @@
 import { describe, expect, it } from 'vitest';
+import { aplicarEstilo } from './templateEditor';
+import { ElementoTemplateSchema } from '../../shared/types';
+
+describe('copiar estilo', () => {
+  it('copia aparência sem alterar imagem ou geometria e permite desfazer', () => {
+    const source = ElementoTemplateSchema.parse({ id: 'antes', tipo: 'foto_antes', rotulo: 'Antes', x: 10, y: 20, w: 100, h: 120, estilo: { borda: { cor: '#ff0000', largura: 12 }, sombra: true, sombraConfig: { cor: '#000000', x: 3, y: 6, desfoque: 20, expansao: 2, opacidade: .5 }, raio: 30, opacidade: .8 } });
+    const target = ElementoTemplateSchema.parse({ id: 'depois', tipo: 'foto_depois', rotulo: 'Depois', x: 200, y: 40, w: 300, h: 400, conteudo: 'foto-do-depois', logoArquivo: 'logo.png', rotacao: 15, z: 3 });
+    const result = aplicarEstilo(target, source.estilo);
+    expect(result).toEqual({ ...target, estilo: source.estilo });
+    expect(result.estilo.borda).not.toBe(source.estilo.borda);
+    expect(undoHistory(pushHistory(createHistory(target), result)).present).toEqual(target);
+    const locked = { ...target, bloqueado: true };
+    expect(aplicarEstilo(locked, source.estilo)).toBe(locked);
+  });
+});
 import { buildFundo, computeSnap, snapResize, createElemento, createHistory, duplicateElemento, fundoCss, moveZ, parseFundo, pushHistory, redoHistory, resizeRect, undoHistory } from './templateEditor';
 
 const canvas = { largura: 1080, altura: 1350 };

@@ -1,6 +1,8 @@
 import { useEffect, useId, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { ElementoEstilo, ElementoTemplate } from '../../../shared/types';
+import type { ElementoEstilo, ElementoTemplate, Empresa } from '../../../shared/types';
+import { galeriaLogos } from '../../../shared/logos';
+import { empresaLogoUrl } from './TemplateRenderer';
 import { TIPO_LABELS, buildFundo, fotoImagem, parseFundo } from '../../state/templateEditor';
 import { readImageDownscaled } from '../../state/imageFile';
 import type { FundoModo } from '../../state/templateEditor';
@@ -42,7 +44,8 @@ export function FundoField({ label, value, onChange, allowNone = true, allowImag
       : p.modo !== 'none' && <div className="fundo-colors"><ColorField label={p.modo === 'gradient' ? 'Topo' : 'Cor'} value={p.a} onChange={a => set(p.modo, a, p.b)} />{p.modo === 'gradient' && <ColorField label="Base" value={p.b} onChange={b => set(p.modo, p.a, b)} />}</div>}</div>;
 }
 
-export function PropertiesPanel({ element, background = false, nome, fundo, onNome, onFundo, onPatch, onPatchEstilo, onDelete, onDuplicate }: {
+export function PropertiesPanel({ element, empresa, background = false, nome, fundo, onNome, onFundo, onPatch, onPatchEstilo, onDelete, onDuplicate }: {
+  empresa?: Empresa | null;
   element: ElementoTemplate | null; background?: boolean; nome: string; fundo: string;
   onNome: (v: string) => void; onFundo: (v: string) => void;
   onPatch: (patch: Partial<ElementoTemplate>, key: string) => void; onPatchEstilo: (patch: Partial<ElementoEstilo>, key: string) => void;
@@ -58,6 +61,8 @@ export function PropertiesPanel({ element, background = false, nome, fundo, onNo
       <p className="muted">Selecione um elemento ou o Background nas camadas para editar suas propriedades.</p>
     </div></aside>;
   const e = element, s = e.estilo, lock = e.bloqueado, isText = TEXT_TYPES.has(e.tipo);
+  const shadow = s.sombraConfig ?? { cor: '#000000', opacidade: .38, x: 0, y: 14, desfoque: 34, expansao: 0 };
+  const patchShadow = (patch: Partial<typeof shadow>) => onPatchEstilo({ sombraConfig: { ...shadow, ...patch } }, `${e.id}:sombraConfig`);
   const k = (f: string) => `${e.id}:${f}`;
   return <aside className="tpl-panel" aria-label="Propriedades do elemento">
     <div className="tpl-panel-head"><h2>{TIPO_LABELS[e.tipo]}</h2>
@@ -72,6 +77,16 @@ export function PropertiesPanel({ element, background = false, nome, fundo, onNo
       <NumField label="Rotação (°)" value={e.rotacao} disabled={lock} onChange={rotacao => onPatch({ rotacao }, k('rotacao'))} />
     </Section>
     {/^foto_/.test(e.tipo) && <Section title="Imagem de placeholder"><ImagePicker label="Foto de exemplo (só para facilitar a leitura)" current={fotoImagem(e)} maxW={1080} maxH={1350} onPick={d => onPatch({ conteudo: d }, k('imagem'))} onClear={() => onPatch({ conteudo: '' }, k('imagem'))} /></Section>}
+    {e.tipo === 'logo' && <Section title="Biblioteca de logos"><div className="field wide">
+      <p className="muted small-text">{empresa?.nome ?? 'Empresa'} · escolha a logo para este elemento.</p>
+      <button type="button" className="button outline small" aria-pressed={!e.logoArquivo} onClick={() => onPatch({ logoArquivo: null }, k('logo'))}>Usar logo principal da empresa</button>
+      {empresa?.logo && <button type="button" className="tpl-logo-choice" aria-label="Selecionar logo principal" aria-pressed={e.logoArquivo === empresa.logo} onClick={() => onPatch({ logoArquivo: empresa.logo }, k('logo'))}><img src={empresaLogoUrl(empresa.logo)!} alt="Logo principal"/><span>Principal</span></button>}
+      {(['claro', 'escuro'] as const).map(fundoLogo => {
+        const logos = empresa ? galeriaLogos(empresa).filter(l => l.fundo === fundoLogo) : [];
+        return <div key={fundoLogo}><h4>Para fundo {fundoLogo}</h4><div className="tpl-logo-library">{logos.map((l, i) => <button type="button" key={l.arquivo} className="tpl-logo-choice" aria-label={`Selecionar logo para fundo ${fundoLogo} ${i + 1}`} aria-pressed={e.logoArquivo === l.arquivo} onClick={() => onPatch({ logoArquivo: l.arquivo }, k('logo'))}><span className="tpl-logo-preview" style={{ background: fundoLogo === 'claro' ? '#f7f5f0' : '#171717' }}><img src={empresaLogoUrl(l.arquivo)!} alt={`Logo ${i + 1}`}/></span><span>{l.principal ? '★ Principal' : `Logo ${i + 1}`}{e.logoArquivo === l.arquivo ? ' ✓' : ''}</span></button>)}</div>{!logos.length && <p className="muted small-text">Nenhuma logo neste grupo.</p>}</div>;
+      })}
+      {empresa && <a href={`#/empresas/${empresa.id}`} target="_blank" rel="noreferrer" className="muted small-text">Gerenciar logos da empresa ↗</a>}
+    </div></Section>}
     {isText && <Section title="Texto">
       <div className="field wide"><label htmlFor={`${uid}-txt`}>Conteúdo</label><textarea id={`${uid}-txt`} rows={2} value={e.conteudo} onChange={ev => onPatch({ conteudo: ev.target.value }, k('conteudo'))} />
         <small className="muted">Variáveis: {'{{procedimento}}'}, {'{{preco}}'}, {'{{parcelas}}'}.</small></div>
@@ -86,9 +101,19 @@ export function PropertiesPanel({ element, background = false, nome, fundo, onNo
       <div className="field wide"><FundoField label="Fundo" value={s.fundo} onChange={fundo => onPatchEstilo({ fundo }, k('fundo'))} /></div>
       <NumField label="Raio (px)" value={s.raio} min={0} onChange={raio => raio >= 0 && onPatchEstilo({ raio }, k('raio'))} />
       <div className="field compact"><label htmlFor={`${uid}-op`}>Opacidade ({Math.round(s.opacidade * 100)}%)</label><input id={`${uid}-op`} type="range" min={0} max={1} step={0.05} value={s.opacidade} onChange={ev => onPatchEstilo({ opacidade: Number(ev.target.value) }, k('opacidade'))} /></div>
+    </Section>
+    <Section title="Borda">
       <div className="field wide"><Check label="Borda" checked={!!s.borda} onChange={on => onPatchEstilo({ borda: on ? { cor: '#8d8b88', largura: 8 } : null }, k('borda'))} /></div>
       {s.borda && <><ColorField label="Cor da borda" value={s.borda.cor} onChange={cor => onPatchEstilo({ borda: { ...s.borda!, cor } }, k('bordaCor'))} /><NumField label="Largura da borda" value={s.borda.largura} min={0} onChange={largura => largura >= 0 && onPatchEstilo({ borda: { ...s.borda!, largura } }, k('bordaLargura'))} /></>}
+    </Section>
+    <Section title="Sombra">
       <div className="field wide"><Check label="Sombra" checked={s.sombra} onChange={sombra => onPatchEstilo({ sombra }, k('sombra'))} /></div>
+      {s.sombra && <><ColorField label="Cor da sombra" value={shadow.cor} onChange={cor => patchShadow({ cor })}/>
+        <NumField label="Opacidade da sombra (%)" value={Math.round(shadow.opacidade * 100)} min={0} max={100} onChange={v => patchShadow({ opacidade: Math.max(0, Math.min(100, v)) / 100 })}/>
+        <NumField label="Deslocamento X (px)" value={shadow.x} onChange={x => patchShadow({ x })}/>
+        <NumField label="Deslocamento Y (px)" value={shadow.y} onChange={y => patchShadow({ y })}/>
+        <NumField label="Desfoque (px)" value={shadow.desfoque} min={0} onChange={desfoque => desfoque >= 0 && patchShadow({ desfoque })}/>
+        <NumField label="Expansão (px)" value={shadow.expansao} onChange={expansao => patchShadow({ expansao })}/></>}
     </Section>
   </aside>;
 }

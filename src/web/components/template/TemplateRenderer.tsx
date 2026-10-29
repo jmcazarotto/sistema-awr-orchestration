@@ -21,7 +21,7 @@ export function elementoStyle(el: ElementoTemplate): CSSProperties {
     transform: el.rotacao ? `rotate(${el.rotacao}deg)` : undefined, opacity: s.opacidade,
     background: fundoCss(s.fundo), borderRadius: s.raio, overflow: 'hidden',
     border: s.borda && s.borda.largura > 0 ? `${s.borda.largura}px solid ${s.borda.cor}` : undefined,
-    boxShadow: s.sombra ? '0 14px 34px rgba(0,0,0,.38)' : undefined,
+    boxShadow: s.sombra ? (s.sombraConfig ? `${s.sombraConfig.x}px ${s.sombraConfig.y}px ${s.sombraConfig.desfoque}px ${s.sombraConfig.expansao}px color-mix(in srgb, ${s.sombraConfig.cor} ${s.sombraConfig.opacidade * 100}%, transparent)` : '0 14px 34px rgba(0,0,0,.38)') : undefined,
     display: 'flex', alignItems: 'center', justifyContent: JUSTIFY[s.alinhamento], userSelect: 'none',
   };
 }
@@ -31,10 +31,11 @@ export function ElementoView({ el, logoUrl, labels = true }: { el: ElementoTempl
   if (el.tipo === 'foto_antes' || el.tipo === 'foto_depois' || el.tipo === 'foto_principal') {
     const img = fotoImagem(el);
     if (img) return <div style={elementoStyle(el)}><img src={img} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} /></div>;
-    return <div style={{ ...elementoStyle(el), backgroundImage: STRIPES, color: 'rgba(16,23,47,.55)', fontFamily: FONT_FAMILIES.sans_black, fontWeight: 900, fontSize: Math.max(24, Math.min(el.w, el.h) / 8), letterSpacing: 4 }}>{labels && PHOTO_LABELS[el.tipo]}</div>;
+    return <div style={{ ...elementoStyle(el), background: s.fundo ? `${STRIPES}, ${fundoCss(s.fundo)}` : STRIPES, color: 'rgba(16,23,47,.55)', fontFamily: FONT_FAMILIES.sans_black, fontWeight: 900, fontSize: Math.max(24, Math.min(el.w, el.h) / 8), letterSpacing: 4 }}>{labels && PHOTO_LABELS[el.tipo]}</div>;
   }
   if (el.tipo === 'logo') {
-    return <div style={elementoStyle(el)}>{logoUrl ? <img src={logoUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} /> : <span style={{ fontFamily: FONT_FAMILIES.sans_black, fontWeight: 900, fontSize: Math.min(el.h / 3, 32), color: s.cor, letterSpacing: 3 }}>{labels ? 'LOGO' : ''}</span>}</div>;
+    const chosenLogo = empresaLogoUrl(el.logoArquivo) ?? logoUrl;
+    return <div style={elementoStyle(el)}>{chosenLogo ? <img src={chosenLogo} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain', pointerEvents: 'none' }} /> : <span style={{ fontFamily: FONT_FAMILIES.sans_black, fontWeight: 900, fontSize: Math.min(el.h / 3, 32), color: s.cor, letterSpacing: 3 }}>{labels ? 'LOGO' : ''}</span>}</div>;
   }
   if (el.tipo === 'forma') return <div style={elementoStyle(el)} />;
   return <div style={{ ...elementoStyle(el), color: s.cor, fontFamily: FONT_FAMILIES[s.fonte], fontSize: s.tamanho, fontWeight: s.peso, fontStyle: s.italico ? 'italic' : 'normal', textTransform: s.caixaAlta ? 'uppercase' : 'none', textAlign: s.alinhamento === 'esquerda' ? 'left' : s.alinhamento === 'direita' ? 'right' : 'center', lineHeight: 1.05, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}><span style={{ width: '100%' }}>{el.conteudo}</span></div>;

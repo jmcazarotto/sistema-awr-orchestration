@@ -5,6 +5,8 @@ import type { Connection } from '../transport/events';
 export interface AppState {
   demandas: Demanda[]; messages: InboxMessage[]; acervo: AcervoGrid | null; skills: SkillSummary[];
   actors: Record<ActorId, { status: ActorStatus; demandaId: string | null }>;
+  /** Agentes pausados (não pegam nada da fila até retomar). */
+  pausados: ActorId[];
   triagens: Triagem[];
   triagemAtiva: Extract<SseEnvelope, {type: 'triagem.started'}>['payload'] | null;
   reviews: Extract<SseEnvelope, {type: 'review.result'}>[];
@@ -14,7 +16,7 @@ export interface AppState {
   config: OrchestratorConfig;
 }
 export function initialState(): AppState {
-  return { demandas: [], messages: [], acervo: null, skills: [], actors: Object.fromEntries(ACTOR_IDS.map(id => [id, {status: 'idle', demandaId: null}])) as AppState['actors'], triagens: [], triagemAtiva: null, reviews: [], learnings: [], logs: [], seen: [], connection: 'connecting', loading: true, error: null, config: OrchestratorConfigSchema.parse({}) };
+  return { demandas: [], messages: [], acervo: null, skills: [], actors: Object.fromEntries(ACTOR_IDS.map(id => [id, {status: 'idle', demandaId: null}])) as AppState['actors'], pausados: [], triagens: [], triagemAtiva: null, reviews: [], learnings: [], logs: [], seen: [], connection: 'connecting', loading: true, error: null, config: OrchestratorConfigSchema.parse({}) };
 }
 export function upsertDemand(demandas: Demanda[], demanda: Demanda) {
   const old = demandas.find(d => d.id === demanda.id);
@@ -34,6 +36,7 @@ export function applyEvent(state: AppState, event: SseEnvelope): AppState {
   switch (event.type) {
     case 'triagem.started': return {...next, triagemAtiva: event.payload};
     case 'triagem.result': return {...next, triagens: mergeTriagens(state.triagens, event.payload), triagemAtiva: state.triagemAtiva?.triagemId === event.payload.id ? null : state.triagemAtiva};
+    case 'agentes.pausa': return {...next, pausados: event.payload.pausados};
     case 'actor.status': return {...next, actors: {...state.actors, [event.payload.actorId]: {status: event.payload.status, demandaId: event.payload.demandaId}}};
     case 'message.sent': return {...next, messages: mergeMessages(state.messages, [event.payload])};
     case 'demand.updated': return {...next, demandas: upsertDemand(state.demandas, event.payload)};
