@@ -87,7 +87,7 @@ export class ImageEngine {
     if (this.config.IMAGE_ENGINE_MODE === 'openai') {
       if (!this.ai) throw new Error('ImageEngine OpenAI não configurado');
       const reference = feedback && demanda.stagingPath ? await this.storage.read(demanda.stagingPath) : references[0] ? await this.storage.read(references[0]) : undefined;
-      photo = await this.ai.photo(promptUsado, reference);
+      photo = await this.ai.photo(promptUsado, reference, demanda.criadorAtual === 'monalisa' ? 'imagem_monalisa' : 'imagem_van_gogh');
     }
     const palette = context.skill.palette; const background = procedimento === 'preenchimento_labial' ? '#FBF5F2' : procedimento === 'botox' ? '#EAF0F2' : '#E9DCC9';
     const svg: string[] = [rect({ x: 0, y: 0, w: 1080, h: height }, background)];

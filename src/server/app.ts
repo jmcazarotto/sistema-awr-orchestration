@@ -1,4 +1,4 @@
-import { EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
+import { IaModelosResponseSchema, IaModelosSchema, IaUsoResponseSchema, EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import {
@@ -67,6 +67,10 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     return c.json(TemplateResponseSchema.parse({ template }));
   });
   app.put('/api/templates/:id', async c => c.json(TemplateResponseSchema.parse({ template: await orchestrator.templates.save(c.req.param('id'), validate(SaveTemplateRequestSchema, await bodyJson(c))) })));
+  app.get('/api/ia/modelos', c => c.json(IaModelosResponseSchema.parse({ modelos: orchestrator.ia.modelos() })));
+  app.put('/api/ia/modelos', async c => c.json(IaModelosResponseSchema.parse({ modelos: await orchestrator.ia.salvarModelos(validate(IaModelosSchema, await bodyJson(c))) })));
+  app.get('/api/ia/uso', c => c.json(IaUsoResponseSchema.parse(orchestrator.ia.uso())));
+  app.post('/api/ia/uso/zerar', async c => c.json(IaUsoResponseSchema.parse(await orchestrator.ia.zerarUso())));
   app.post('/api/triagem', async c => {
     const { texto } = validate(TriagemRequestSchema, await bodyJson(c));
     return c.json(TriagemResponseSchema.parse({ triagem: await orchestrator.triar(texto) }));

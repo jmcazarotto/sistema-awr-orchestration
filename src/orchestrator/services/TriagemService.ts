@@ -1,3 +1,4 @@
+import type { IaRegistry } from './IaRegistry';
 import { nanoid } from 'nanoid';
 import { BriefingTipoSchema, CriadorIdSchema, ProcedimentoSchema, TipoTemplateSchema, TriagemRequestSchema, TriagemSchema } from '../../shared/types';
 import type { BriefingItem, OrchestratorConfig, Triagem } from '../../shared/types';
@@ -59,7 +60,7 @@ function distribuicao<K extends string>(keys: readonly K[], escolha: K, p: numbe
 }
 
 export class TriagemService {
-  constructor(private readonly config: OrchestratorConfig, private readonly bus: Pick<EventBus, 'emit' | 'log' | 'clock'>, private readonly jev?: JevClient) {}
+  constructor(private readonly config: OrchestratorConfig, private readonly bus: Pick<EventBus, 'emit' | 'log' | 'clock'>, private readonly jev?: JevClient, private readonly ia?: Pick<IaRegistry, 'registrar'>) {}
   async triar(value: string): Promise<Triagem> {
     const { texto } = TriagemRequestSchema.parse({ texto: value });
     const id = `TRI-${nanoid()}`;
@@ -116,6 +117,7 @@ export class TriagemService {
       fields = { empresa: empresaMock, ...porRegra(agenteMock), probabilidades, briefing, procedimento: mock.procedimento, procedimentoConfianca: mock.confianca, tipoTemplate: mock.tipoTemplate, tipoTemplateConfianca: mock.confianca, tokens: { entrada: 0, saida: 0 }, latenciaMs: performance.now() - start, modelo };
     }
     const usd = (fields.tokens.entrada * this.config.JEV_PRICE_INPUT_USD_PER_MTOK + fields.tokens.saida * this.config.JEV_PRICE_OUTPUT_USD_PER_MTOK) / 1e6;
+    if (real) await this.ia?.registrar({ modelo, provedor: 'jev', tokensEntrada: fields.tokens.entrada, tokensSaida: fields.tokens.saida, usd });
     const triagem = TriagemSchema.parse({ id, texto, ...fields, familiaArte: fields.tipoTemplate.startsWith('antes_depois') ? 'antes_depois' : 'banco_imagem', provider, custo: { usd, brl: usd * this.config.USD_BRL, cotacaoUsdBrl: this.config.USD_BRL }, criadoEm: this.bus.clock.now().toISOString() });
     this.bus.emit({ type: 'triagem.result', payload: triagem });
     this.bus.log('info', `Triagem ${id}: ${provider}, ${triagem.procedimento}, ${triagem.tipoTemplate}, ${triagem.agente}, ${triagem.latenciaMs.toFixed(1)} ms, ${triagem.tokens.entrada + triagem.tokens.saida} tokens.`);

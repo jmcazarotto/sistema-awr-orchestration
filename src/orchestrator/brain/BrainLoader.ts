@@ -120,7 +120,7 @@ export class BrainLoader {
     return { skill, composition, aprendizados, rubrica: [...skill.rubrica, ...aprendizados.map(learning => ({ id: learning.id, severidade: learning.severidade ?? 'critico' as const, pergunta: `${learning.regra.replace(/[.?]$/, '')}?` }))] };
   }
   async distillLearning(motivo: string, template: TipoTemplate): Promise<string> {
-    if (this.ai) return (await this.ai.json(this.ai.config.FEEDBACK_MODEL, z.object({ regra: z.string().min(12) }), 'Transforme o motivo humano em uma regra imperativa, generalizável e acionável em PT-BR. Nunca inclua informações específicas da demanda.', JSON.stringify({ motivo, template }))).regra;
+    if (this.ai) return (await this.ai.json(this.ai.alvo('aprendizado', this.ai.config.FEEDBACK_MODEL), z.object({ regra: z.string().min(12) }), 'Transforme o motivo humano em uma regra imperativa, generalizável e acionável em PT-BR. Nunca inclua informações específicas da demanda.', JSON.stringify({ motivo, template }))).regra;
     const text = motivo.toLowerCase();
     if (/selo|sobrep|cobr|tamp/.test(text)) return 'Posicione selo e textos somente nas áreas reservadas do template, sem encobrir a região tratada.';
     if (/cor|contraste|escuro|leg[ií]vel/.test(text)) return 'Use a paleta do procedimento e contraste legível entre texto e fundo em todas as caixas do template.';

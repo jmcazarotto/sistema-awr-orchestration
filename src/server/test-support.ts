@@ -6,6 +6,8 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { vi } from 'vitest';
+import { IA_SITUACOES, IA_SITUACAO_INFO, IaModelosSchema } from '../shared/types';
+import type { IaModelos } from '../shared/types';
 import {
   OrchestratorConfigSchema, PROCEDIMENTOS, SkillIdSchema, TIPOS_TEMPLATE,
 } from '../shared/types';
@@ -86,6 +88,13 @@ export class FakeOrchestrator implements Orchestrator {
       const template = { ...previous, ...input, atualizadoEm: agora };
       await this.templateStore.save(template); return template;
     },
+  };
+  private iaModelos: IaModelos = Object.fromEntries(IA_SITUACOES.map(s => [s, { modelo: IA_SITUACAO_INFO[s].modelos[0]!, effort: null }])) as IaModelos;
+  readonly ia: Orchestrator['ia'] = {
+    modelos: () => this.iaModelos,
+    salvarModelos: async input => (this.iaModelos = IaModelosSchema.parse(input)),
+    uso: () => ({ desde: null, cotacaoUsdBrl: this.config.USD_BRL, itens: [{ provedor: 'jev', modelo: 'jev-latest', chamadas: 2, tokensEntrada: 900, tokensSaida: 10, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL, precificado: true }], total: { chamadas: 2, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL } }),
+    zerarUso: async () => ({ desde: null, cotacaoUsdBrl: this.config.USD_BRL, itens: [], total: { chamadas: 0, usd: 0, brl: 0 } }),
   };
   constructor(config = OrchestratorConfigSchema.parse({})) { this.config = config; }
   readonly submitDemand = vi.fn(async (input: SubmitDemandInput): Promise<Demanda> => {

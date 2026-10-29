@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { DemandaSchema, InboxMessageSchema, LearningSchema, ReviewResultSchema, SubmitDemandInputSchema } from '../../shared/types';
+import { DemandaSchema, IaModeloConfigSchema, IaSituacaoSchema, InboxMessageSchema, LearningSchema, ReviewResultSchema, SubmitDemandInputSchema } from '../../shared/types';
 import type { Demanda, InboxMessage } from '../../shared/types';
 
 export const EngineStateSchema = z.object({
@@ -13,6 +13,12 @@ export const EngineStateSchema = z.object({
   reminders: z.record(z.string(), z.number()).default({}),
   reviews: z.record(z.string(), z.object({ review: ReviewResultSchema, tentativa: z.number().int().positive() })).default({}),
   learningByMessage: z.record(z.string(), LearningSchema).default({}),
+  /** Modelos escolhidos na página Configurações (sobrepõem os defaults do env) e uso acumulado por modelo. */
+  ia: z.object({
+    modelos: z.partialRecord(IaSituacaoSchema, IaModeloConfigSchema).default({}),
+    uso: z.record(z.string(), z.object({ provedor: z.enum(['jev', 'openai_decisions', 'openai']), modelo: z.string(), chamadas: z.number().int().nonnegative(), tokensEntrada: z.number().int().nonnegative(), tokensSaida: z.number().int().nonnegative(), usd: z.number().nonnegative() })).default({}),
+    usoDesde: z.string().nullable().default(null),
+  }).default({ modelos: {}, uso: {}, usoDesde: null }),
 });
 export type EngineState = z.infer<typeof EngineStateSchema>;
 export const emptyState = (): EngineState => EngineStateSchema.parse({});

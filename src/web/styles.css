@@ -120,3 +120,8 @@ input[type=color]{padding:3px;height:36px;width:48px;cursor:pointer}input[type=c
 @media(prefers-reduced-motion:reduce){.sim-toast{animation:sim-fade 3.2s both!important}@keyframes sim-fade{0%,100%{opacity:0;transform:translateX(-50%)}15%,80%{opacity:1;transform:translateX(-50%)}}}
 .sim-toast.reject .sim-toast-art{background:#fdecec;color:#b42318}.sim-toast.reject{border-color:#f3b4ae}
 .raw-json-toggle{margin-left:auto;flex-shrink:0;align-self:flex-start;color:var(--muted)}.raw-json-toggle[aria-expanded=true]{background:var(--pale);color:var(--pale-text)}
+
+/* Menu: Configurações fixa no fim da lista */
+.sidebar nav{flex:1;min-height:0;overflow-y:auto}.nav-item.nav-settings{margin-top:auto}
+/* Configurações › custos e modelos */
+.cost-table tfoot th,.cost-table tfoot td{border-top:1px solid var(--line);padding-top:18px;padding-bottom:4px}.cost-table td .muted{font-size:10px}.cost-note{font-size:10px;margin-top:18px;line-height:1.7}.cost-note code{font-size:10px;background:var(--bg);padding:1px 5px;border-radius:5px}.model-actions{display:flex;gap:10px}.model-group{border-top:1px solid var(--line);padding:20px 0 6px}.model-group>.eyebrow{margin-bottom:6px}.model-row{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(180px,1fr) minmax(160px,.8fr);gap:18px;align-items:start;padding:14px 0}.model-row+.model-row{border-top:1px dashed var(--line)}.model-info strong{font-size:12px}.model-info p{font-size:11px;margin-top:4px}.model-row label{display:flex;flex-direction:column;gap:6px}.model-row label small{font-size:10px}@media (max-width:900px){.model-row{grid-template-columns:1fr}}

@@ -66,3 +66,19 @@ describe('API empresas/templates', () => {
     } finally { await f.close(); }
   });
 });
+
+describe('API ia (Configurações)', () => {
+  it('lê e salva modelos, lê e zera uso', async () => {
+    const f = await setup();
+    try {
+      const modelos = (await (await f.api.request('/api/ia/modelos')).json()) as { modelos: Record<string, unknown> };
+      expect(modelos.modelos.imagem_monalisa).toEqual({ modelo: 'gpt-image-2', effort: 'medio' });
+      const salvar = await f.api.request('/api/ia/modelos', { method: 'PUT', ...json({ ...modelos.modelos, aprendizado: { modelo: 'gpt-6.1-sol', effort: 'ultra' } }) });
+      expect(salvar.status).toBe(200);
+      expect((await f.api.request('/api/ia/modelos', { method: 'PUT', ...json({ ...modelos.modelos, triagem: { modelo: 'x', effort: null } }) })).status).toBe(400);
+      const uso = (await (await f.api.request('/api/ia/uso')).json()) as { itens: unknown[]; total: { chamadas: number } };
+      expect(uso.itens).toHaveLength(2);
+      expect((await f.api.request('/api/ia/uso/zerar', { method: 'POST', ...json({}) })).status).toBe(200);
+    } finally { await f.close(); }
+  });
+});

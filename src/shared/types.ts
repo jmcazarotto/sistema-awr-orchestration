@@ -560,6 +560,74 @@ export interface EventBusPublic {
 }
 
 /** API headless. Listagens são snapshots, sem dependência de transporte HTTP. */
+
+/* ───────────── Modelos de IA e custos de integração ───────────── */
+
+/** Situações em que o sistema chama um modelo de IA (configuráveis na página Configurações). */
+export const IA_SITUACOES = ['triagem', 'rubrica', 'feedback', 'aprendizado', 'imagem_van_gogh', 'imagem_monalisa'] as const;
+export const IaSituacaoSchema = z.enum(IA_SITUACOES);
+export type IaSituacao = z.infer<typeof IaSituacaoSchema>;
+/** Nível de esforço (raciocínio) em PT-BR; mapeado para o valor da API em IA_EFFORT_API. */
+export const IA_EFFORTS = ['baixo', 'medio', 'alto', 'muito_alto', 'maximo', 'ultra'] as const;
+export const IaEffortSchema = z.enum(IA_EFFORTS);
+export type IaEffort = z.infer<typeof IaEffortSchema>;
+export const IA_EFFORT_LABELS: Record<IaEffort, string> = { baixo: 'Baixo', medio: 'Médio', alto: 'Alto', muito_alto: 'Muito alto', maximo: 'Máximo', ultra: 'Ultra' };
+export const IA_EFFORT_API: Record<IaEffort, string> = { baixo: 'low', medio: 'medium', alto: 'high', muito_alto: 'xhigh', maximo: 'max', ultra: 'ultra' };
+export type IaProvedor = 'jev' | 'openai_decisions' | 'openai';
+
+export interface IaModeloCatalogo {
+  id: string; nome: string; versao: string; provedor: IaProvedor; descricao: string;
+  /** Esforços aceitos; vazio = não se aplica. Em modelos de imagem o esforço vira a qualidade. */
+  efforts: readonly IaEffort[];
+  /** USD por 1M tokens (null = preço não configurado). */
+  precoEntrada: number | null; precoSaida: number | null;
+}
+export const IA_CATALOGO: readonly IaModeloCatalogo[] = [
+  { id: 'jev-latest', nome: 'Jev', versao: 'latest', provedor: 'jev', descricao: 'TypeSafe AI · escolhas com probabilidade calibrada', efforts: [], precoEntrada: 0.042, precoSaida: 0 },
+  { id: 'gpt-6-luna-decisions', nome: 'Luna', versao: '6.0', provedor: 'openai_decisions', descricao: 'OpenAI Decisions API · Sim/Não e escolhas, aceita imagem', efforts: [], precoEntrada: 0.1, precoSaida: 0 },
+  { id: 'gpt-6.1-terra', nome: 'Terra', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · texto e feedback detalhado', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null },
+  { id: 'gpt-6.1-sol', nome: 'Codex Sol', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · raciocínio profundo', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo', 'ultra'], precoEntrada: null, precoSaida: null },
+  { id: 'gpt-image-2', nome: 'GPT Image', versao: '2', provedor: 'openai', descricao: 'OpenAI · camada fotográfica (esforço = qualidade)', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null },
+];
+export const iaModelo = (id: string) => IA_CATALOGO.find(modelo => modelo.id === id);
+export const iaModeloLabel = (id: string) => { const m = iaModelo(id); return m ? `${m.nome} ${m.versao}` : id; };
+
+export interface IaSituacaoInfo { label: string; agente: string; descricao: string; modelos: readonly string[] }
+export const IA_SITUACAO_INFO: Record<IaSituacao, IaSituacaoInfo> = {
+  triagem: { label: 'Classificação/triagem da demanda', agente: 'Diretor de Arte', descricao: 'Empresa, procedimento, tipo de arte, agente e briefing.', modelos: ['jev-latest'] },
+  rubrica: { label: 'Revisão visual (rubrica Sim/Não)', agente: 'Diretor de Arte', descricao: 'Avalia cada item da rubrica olhando a arte.', modelos: ['gpt-6-luna-decisions', 'gpt-6.1-terra', 'gpt-6.1-sol'] },
+  feedback: { label: 'Feedback de correção', agente: 'Diretor de Arte', descricao: 'Redige o que corrigir quando a arte é reprovada.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna-decisions'] },
+  aprendizado: { label: 'Aprendizado do Cérebro', agente: 'Cérebro (Skills)', descricao: 'Transforma o motivo da reprovação humana em regra da skill.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol'] },
+  imagem_van_gogh: { label: 'Geração de imagem · demandas de clientes', agente: 'Van Gogh', descricao: 'Camada fotográfica das artes pedidas por clientes.', modelos: ['gpt-image-2'] },
+  imagem_monalisa: { label: 'Geração de imagem · acervo', agente: 'Monalisa', descricao: 'Camada fotográfica das artes de abastecimento do acervo.', modelos: ['gpt-image-2'] },
+};
+export const IaModeloConfigSchema = z.object({ modelo: z.string().min(1), effort: IaEffortSchema.nullable() });
+export type IaModeloConfig = z.infer<typeof IaModeloConfigSchema>;
+export const IaModelosSchema = z.object(Object.fromEntries(IA_SITUACOES.map(s => [s, IaModeloConfigSchema])) as Record<IaSituacao, typeof IaModeloConfigSchema>)
+  .superRefine((value, ctx) => {
+    for (const situacao of IA_SITUACOES) {
+      const { modelo, effort } = value[situacao]; const catalogo = iaModelo(modelo);
+      if (!IA_SITUACAO_INFO[situacao].modelos.includes(modelo) || !catalogo) ctx.addIssue({ code: 'custom', path: [situacao, 'modelo'], message: 'Modelo não disponível para esta situação' });
+      else if (effort !== null && !catalogo.efforts.includes(effort)) ctx.addIssue({ code: 'custom', path: [situacao, 'effort'], message: 'Esforço não aceito por este modelo' });
+    }
+  });
+export type IaModelos = z.infer<typeof IaModelosSchema>;
+export const IaModelosResponseSchema = z.object({ modelos: IaModelosSchema });
+
+export const IaUsoItemSchema = z.object({
+  provedor: z.enum(['jev', 'openai_decisions', 'openai']), modelo: z.string().min(1),
+  chamadas: z.number().int().nonnegative(), tokensEntrada: z.number().int().nonnegative(), tokensSaida: z.number().int().nonnegative(),
+  usd: z.number().nonnegative(), brl: z.number().nonnegative(),
+  /** false quando o modelo não tem preço configurado (custo exibido como indisponível). */
+  precificado: z.boolean(),
+});
+export type IaUsoItem = z.infer<typeof IaUsoItemSchema>;
+export const IaUsoResponseSchema = z.object({
+  desde: z.iso.datetime().nullable(), cotacaoUsdBrl: z.number().positive(), itens: z.array(IaUsoItemSchema),
+  total: z.object({ chamadas: z.number().int().nonnegative(), usd: z.number().nonnegative(), brl: z.number().nonnegative() }),
+});
+export type IaUsoResponse = z.infer<typeof IaUsoResponseSchema>;
+
 export interface Orchestrator {
   readonly bus: EventBusPublic;
   submitDemand(input: SubmitDemandInput): Promise<Demanda>;
@@ -584,6 +652,13 @@ export interface Orchestrator {
     list(filtro?: TemplatesQuery): Promise<TemplateArte[]>;
     get(id: string): Promise<TemplateArte | undefined>;
     save(id: string, input: SaveTemplateRequest): Promise<TemplateArte>;
+  };
+  /** Modelos de IA por situação e uso/custo acumulado das integrações. */
+  readonly ia: {
+    modelos(): IaModelos;
+    salvarModelos(input: IaModelos): Promise<IaModelos>;
+    uso(): IaUsoResponse;
+    zerarUso(): Promise<IaUsoResponse>;
   };
   start(): Promise<void>;
   stop(): Promise<void>;

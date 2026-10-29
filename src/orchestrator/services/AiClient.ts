@@ -2,14 +2,15 @@ import OpenAI, { toFile } from 'openai';
 import { z } from 'zod';
 import { zodTextFormat } from 'openai/helpers/zod';
 import sharp from 'sharp';
-import type { OrchestratorConfig } from '../../shared/types';
+import type { IaSituacao, OrchestratorConfig } from '../../shared/types';
+import type { IaRegistry } from './IaRegistry';
 import type { EventBus } from '../core/EventBus';
 
 /** Cliente só é construído nos modos explicitamente habilitados. Sem segredos no config. */
 export class AiClient {
   private readonly client: OpenAI;
   private readonly hasKey: boolean;
-  constructor(readonly config: OrchestratorConfig, private readonly bus: EventBus, apiKey?: string) {
+  constructor(readonly config: OrchestratorConfig, private readonly bus: EventBus, apiKey?: string, private readonly ia?: IaRegistry) {
     this.hasKey = Boolean(apiKey?.trim());
     this.client = new OpenAI({ apiKey: apiKey || 'missing-key', maxRetries: 0, timeout: 120000 });
   }
@@ -21,19 +22,28 @@ export class AiClient {
     }
     throw new Error(`Falha de IA em ${role} após duas tentativas`);
   }
-  async json<T extends z.ZodType>(model: string, schema: T, system: string, prompt: string, image?: Buffer): Promise<z.infer<T>> {
+  /** Modelo/esforço da situação conforme Configurações › Modelos de IA (default: env). */
+  alvo(situacao: IaSituacao, fallback: string): { modelo: string; effort?: string } { return this.ia?.para(situacao) ?? { modelo: fallback }; }
+  async json<T extends z.ZodType>(target: string | { modelo: string; effort?: string }, schema: T, system: string, prompt: string, image?: Buffer): Promise<z.infer<T>> {
+    const { modelo: model, effort } = typeof target === 'string' ? { modelo: target, effort: undefined } : target;
     return this.retry(async () => {
-      const response = await this.client.responses.parse({ model, instructions: system,
+      const response = await this.client.responses.parse({ model, instructions: system, ...(effort ? { reasoning: { effort: effort as 'high' } } : {}),
         input: [{ role: 'user', content: image ? [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' }] : [{ type: 'input_text', text: prompt }] }],
         text: { format: zodTextFormat(schema, 'resultado') },
       });
-      return schema.parse(response.output_parsed);
+      const parsed = schema.parse(response.output_parsed);
+      await this.ia?.registrar({ modelo: model, tokensEntrada: response.usage?.input_tokens ?? 0, tokensSaida: response.usage?.output_tokens ?? 0 });
+      return parsed;
     }, model);
   }
-  async photo(prompt: string, reference?: Buffer): Promise<Buffer> {
+  async photo(prompt: string, reference?: Buffer, situacao: IaSituacao = 'imagem_van_gogh'): Promise<Buffer> {
+    const { modelo, effort } = this.alvo(situacao, this.config.IMAGE_MODEL);
+    // Em imagem, o esforço escolhido vira a qualidade.
+    const qualidades = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+    const quality = qualidades.find(value => value === effort);
     return this.retry(async () => {
       // gpt-image-2 recebe dimensões múltiplas de 16; o compositor fixa o canvas final.
-      const request = { model: this.config.IMAGE_MODEL, prompt, size: this.config.IMAGE_SIZE === '1080x1920' ? '1088x1920' : '1088x1360', output_format: 'png' as const, n: 1 };
+      const request = { model: modelo, prompt, ...(quality ? { quality } : {}), size: this.config.IMAGE_SIZE === '1080x1920' ? '1088x1920' : '1088x1360', output_format: 'png' as const, n: 1 };
       const response = reference
         ? await this.client.images.edit({ ...request, image: await toFile(await sharp(reference).png().toBuffer(), 'referencia.png', { type: 'image/png' }) })
         : await this.client.images.generate(request);
@@ -41,6 +51,7 @@ export class AiClient {
       const buffer = Buffer.from(result.data[0]!.b64_json, 'base64');
       const metadata = await sharp(buffer).metadata();
       if (!metadata.width || !metadata.height) throw new Error('Camada fotográfica inválida');
+      await this.ia?.registrar({ modelo, tokensEntrada: response.usage?.input_tokens ?? 0, tokensSaida: response.usage?.output_tokens ?? 0 });
       return buffer;
     }, 'imagem');
   }

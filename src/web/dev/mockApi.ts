@@ -3,6 +3,8 @@ import type { AcervoGrid, Demanda, EstadoDemanda, InboxMessage, Learning, Review
 import type { EventHandlers } from '../transport/events';
 import type { Empresa, TemplateArte } from '../../shared/types';
 import { seedEmpresas, seedTemplates } from './mockTemplates';
+import { IA_SITUACOES, IA_SITUACAO_INFO, IaModelosSchema } from '../../shared/types';
+import type { IaModelos, IaUsoResponse } from '../../shared/types';
 
 const now = () => new Date().toISOString();
 const rubric = [{id: 'R01', severidade: 'critico' as const, pergunta: 'A região do procedimento está livre de sobreposições?'}, {id: 'R02', severidade: 'normal' as const, pergunta: 'A hierarquia visual mantém headline e CTA legíveis?'}];
@@ -21,6 +23,9 @@ export function createMockApi() {
   let demandas = [seedDemand(1),seedDemand(2),seedDemand(3,'EM_PRODUCAO'),seedDemand(4,'APROVADA_SALVA_NO_ACERVO')];
   let messages: InboxMessage[] = demandas.flatMap(d => d.stagingPath ? [{ id:`msg-seed-${d.id}`, demandaId:d.id, from:d.criadorAtual!, to:'art_director' as const, hop:d.hop, action:'ARTE_ENTREGUE' as const, createdAt:d.createdAt, payload:{stagingPath:d.stagingPath,versao:d.versaoAtual,promptUsado:'Composição demonstrativa em modo local.',engine:'mock' as const} }] : []);
   let serial=0;
+  let iaModelos = Object.fromEntries(IA_SITUACOES.map(s=>[s,{modelo:IA_SITUACAO_INFO[s].modelos[0]!,effort:s==='triagem'||s==='rubrica'?null:'medio'}])) as IaModelos;
+  let usoJev = {chamadas:0,tokensEntrada:0,usd:0,desde:null as string|null};
+  const iaUso = (): IaUsoResponse => ({desde:usoJev.desde,cotacaoUsdBrl:5.5,itens:[{provedor:'jev',modelo:'jev-latest',chamadas:usoJev.chamadas,tokensEntrada:usoJev.tokensEntrada,tokensSaida:0,usd:usoJev.usd,brl:usoJev.usd*5.5,precificado:true},{provedor:'openai_decisions',modelo:'gpt-6-luna-decisions',chamadas:0,tokensEntrada:0,tokensSaida:0,usd:0,brl:0,precificado:true}],total:{chamadas:usoJev.chamadas,usd:usoJev.usd,brl:usoJev.usd*5.5}});
   let empresas: Empresa[] = seedEmpresas();
   let templates: TemplateArte[] = seedTemplates();
   const history: SseEnvelope[]=[];
@@ -105,6 +110,7 @@ export function createMockApi() {
       const nome = royal ? `Royal Face${cidade ? ` ${cidade}` : ''}` : texto.match(/(?:para a|clínica|empresa)\s+(.+)$/i)?.[1] ?? null;
       const usd = 450 * .042 / 1_000_000;
       const triagem: Triagem = {id,texto,empresa:{id:royal?'royal_face':null,nome,cadastrada:royal,confianca:royal?1:nome?.length ? .5 : 0,rede:royal?{id:'royal_face',nome:'Royal Face'}:null,unidade:cidade?{id:null,nome:cidade,cadastrada:unidadeCadastrada}:null,metodo:royal?'cadastro':nome?'extracao':'nenhum'},procedimento,procedimentoConfianca:.97,tipoTemplate,familiaArte,tipoTemplateConfianca:.95,briefing:[],...(/acervo|abastec/i.test(texto)&&!royal?{agente:'monalisa' as const,agenteConfianca:1,agenteMotivo:'Pedido de abastecimento do acervo → Monalisa.',agenteRegra:true}:{agente:'van_gogh' as const,agenteConfianca:royal?1:.5,agenteMotivo:'Demanda de cliente → Van Gogh.',agenteRegra:royal}),provider:'mock',modelo:'jev-mock',latenciaMs:Math.round(performance.now()-started),tokens:{entrada:400,saida:50},custo:{usd,brl:usd*5.5,cotacaoUsdBrl:5.5},criadoEm:now()};
+      usoJev={chamadas:usoJev.chamadas+1,tokensEntrada:usoJev.tokensEntrada+400,usd:usoJev.usd+usd,desde:usoJev.desde??now()};
       emit({type:'triagem.result',payload:triagem});
       return response({triagem});
     }
@@ -136,6 +142,9 @@ export function createMockApi() {
       const parsed=SaveTemplateRequestSchema.safeParse(body);if(!parsed.success)return error('Template inválido.',400,'VALIDATION_ERROR');
       const template={...found,...parsed.data,atualizadoEm:now()};templates=templates.map(t=>t.id===template.id?template:t);return response({template});
     }
+    if(path==='/api/ia/modelos'){if(!put)return response({modelos:iaModelos});const parsed=IaModelosSchema.safeParse(body);if(!parsed.success)return error('Modelos inválidos.',400,'VALIDATION_ERROR');iaModelos=parsed.data;return response({modelos:iaModelos});}
+    if(path==='/api/ia/uso')return response(iaUso());
+    if(path==='/api/ia/uso/zerar'&&post){usoJev={chamadas:0,tokensEntrada:0,usd:0,desde:null};return response(iaUso());}
     if(path==='/api/config') return response({config:OrchestratorConfigSchema.parse({})});
     if(path==='/api/messages')return response({messages});
     if(path==='/api/demandas')return post?response({demanda:create(body)},201):response({demandas});

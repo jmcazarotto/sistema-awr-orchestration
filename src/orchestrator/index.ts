@@ -14,6 +14,7 @@ import { OrchestratorError } from './core/errors';
 import { BrainLoader } from './brain/BrainLoader';
 import { AiClient } from './services/AiClient';
 import { TriagemService } from './services/TriagemService';
+import { IaRegistry } from './services/IaRegistry';
 import { JevClient } from './services/JevClient';
 import { FastClassifier } from './services/FastClassifier';
 import { ImageEngine } from './services/ImageEngine';
@@ -50,10 +51,11 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
   const templateStore = dependencies.templateStore ?? new FsTemplateStore(config.DATA_DIR);
   const seed = async () => seedTemplates(templateStore, await clientes.list(), clock.now().toISOString());
   const bus = new EventBus(dependencies.stateStore ?? new FileStateStore(config.DATA_DIR), clock, dependencies.ids ?? new NanoIdGenerator(), config.MAX_HOPS);
-  const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' ? new AiClient(config, bus, dependencies.apiKey ?? process.env.OPENAI_API_KEY) : undefined;
+  const ia = new IaRegistry(config, bus);
+  const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' ? new AiClient(config, bus, dependencies.apiKey ?? process.env.OPENAI_API_KEY, ia) : undefined;
   const brain = new BrainLoader(config.BRAIN_DIR, clock, bus, config.AI_MODE === 'openai' ? ai : undefined);
   const jevKey = dependencies.jevApiKey ?? process.env.JEV_API_KEY;
-  const triagem = new TriagemService(config, bus, jevKey ? new JevClient(config, jevKey, { fetch: dependencies.fetch }) : undefined);
+  const triagem = new TriagemService(config, bus, jevKey ? new JevClient(config, jevKey, { fetch: dependencies.fetch }) : undefined, ia);
   const classifier = new FastClassifier(config, ai, triagem);
   const images = new ImageEngine(config, storage, brain, clock, ai);
   const reviewer = new VisionReviewer(config, storage, brain, ai, dependencies);
@@ -165,6 +167,7 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
         await templateStore.save(template); return template;
       },
     },
+    ia: { modelos: () => ia.modelos(), salvarModelos: input => ia.salvarModelos(input), uso: () => ia.uso(), zerarUso: () => ia.zerarUso() },
     acervo: { grid: () => watcher.grid(), fill: (procedimento, tipoTemplate) => { requireStarted(); FillAcervoRequestSchema.parse({ procedimento, tipoTemplate }); return watcher.fill(procedimento, tipoTemplate); } },
   };
 }

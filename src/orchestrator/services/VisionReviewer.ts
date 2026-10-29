@@ -30,7 +30,7 @@ export class VisionReviewer {
       const validatedSchema = ReviewResultSchema.superRefine((result, ctx) => {
         if (result.itens.length !== context.rubrica.length || new Set(result.itens.map(item => item.id)).size !== context.rubrica.length || context.rubrica.some(item => !result.itens.some(value => value.id === item.id && value.severidade === item.severidade))) ctx.addIssue({ code: 'custom', message: 'Responder exatamente uma vez a cada item da rubrica' });
       });
-      const result = await this.ai.json(this.config.REVIEW_MODEL, validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, composicao: context.composition.conteudo, skill: context.skill.conteudo, template: tipoTemplate, instrucoes: 'Avalie cada item com sim/nao e evidência visual. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), photo);
+      const result = await this.ai.json(this.ai.alvo('rubrica', this.config.REVIEW_MODEL), validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, composicao: context.composition.conteudo, skill: context.skill.conteudo, template: tipoTemplate, instrucoes: 'Avalie cada item com sim/nao e evidência visual. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), photo);
       itens = result.itens;
     } else {
       const meta = ArteMetaSchema.parse(JSON.parse((await this.storage.read(metaPath(path))).toString('utf8')));
@@ -52,7 +52,7 @@ export class VisionReviewer {
     let feedback = { resumo: failed.length ? `Corrigir ${failed.map(item => item.id).join(', ')}.` : 'Rubrica aprovada.', correcoes: failed.slice(0, 3).map(item => ({ itemId: item.id, instrucao: instruction(context.rubrica.find(value => value.id === item.id)!) })) };
     if (failed.length && this.config.AI_MODE === 'openai' && this.ai) {
       const schema = FeedbackDiretorSchema.superRefine((result, ctx) => { if (result.correcoes.length === 0 || result.correcoes.some(item => !failed.some(value => value.id === item.itemId))) ctx.addIssue({ code: 'custom', message: 'Correções devem citar apenas IDs reprovados' }); });
-      feedback = await this.ai.json(this.config.FEEDBACK_MODEL, schema, 'Redija feedback PT-BR executável: o quê, onde e como. Máximo três correções, críticos primeiro. Cite somente IDs reprovados.', JSON.stringify({ failed, template: context.skill.templates[tipoTemplate] }));
+      feedback = await this.ai.json(this.ai.alvo('feedback', this.config.FEEDBACK_MODEL), schema, 'Redija feedback PT-BR executável: o quê, onde e como. Máximo três correções, críticos primeiro. Cite somente IDs reprovados.', JSON.stringify({ failed, template: context.skill.templates[tipoTemplate] }));
     }
     return ReviewResultSchema.parse({ aprovada: rubricaAprovada(itens), score: itens.filter(item => item.resposta === 'sim').length / itens.length, itens, feedback });
   }

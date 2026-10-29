@@ -92,7 +92,10 @@ describe('TriagemService e integração', () => {
       const result = await f.app.triar('Preciso de um antes e depois de botox para a Royal Face Castanhal');
       expect(result).toMatchObject({ provider: 'jev', modelo: 'jev-test', procedimento: 'botox', familiaArte: 'antes_depois', empresa: { id: 'royal_face_castanhal', nome: 'Royal Face Castanhal', cadastrada: true, confianca: 1, metodo: 'cadastro', rede: { id: 'royal_face', nome: 'Royal Face' }, unidade: { id: 'royal_face_castanhal', nome: 'Castanhal', cadastrada: true } }, tokens: { entrada: 1000, saida: 50 }, custo: { usd: 0.0022, brl: 0.0022 * 5, cotacaoUsdBrl: 5 } });
       expect(result.id).toMatch(/^TRI-/); expect(result.latenciaMs).toBeGreaterThanOrEqual(0);
-      expect(f.bus.snapshot()).toEqual(before);
+      // Triagem não cria demanda/mensagem; só registra o uso (custo) da chamada ao Jev.
+      const { ia, ...after } = f.bus.snapshot(); const { ia: _antes, ...beforeRest } = before;
+      expect(after).toEqual(beforeRest);
+      expect(ia.uso['jev:jev-latest']).toMatchObject({ chamadas: 1, tokensEntrada: 1000, tokensSaida: 50, usd: 0.0022 });
       expect(fetcher).toHaveBeenCalledTimes(1);
       const [url, init] = fetcher.mock.calls[0]!;
       expect(url).toBe('https://api.typesafe.ai/v1/systemone');
