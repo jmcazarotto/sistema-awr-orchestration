@@ -26,7 +26,7 @@ npm run acervo:reset          # limpa _staging e pastas finais (mantém _referen
 | Motor headless | `src/orchestrator/**` | **Não importa nada de `server/` ou `web/`.** Exposto via `createOrchestrator()` que retorna `{ bus, submitDemand, humanReview, acervo }`. |
 | API | `src/server/**` | Hono. Única camada que conhece HTTP/SSE. Adapter fino sobre o orquestrador. |
 | UI | `src/web/**` | React + Tailwind v4. Fala só com `/api/*` e `/api/events` (SSE). |
-| Cérebro | `brain/**` | Markdown vivo. Lido a cada execução (sem cache longo) para que edições manuais e aprendizados entrem em vigor sem restart. |
+| Cérebro | `brain/**` | Markdown vivo. Lido a cada execução (sem cache longo) para que edições manuais e aprendizados entrem em vigor sem restart. Skills em camadas: `skills/procedimentos/` (o quê), `skills/tecnicas/` (como, por agente), `skills/marcas/<rede>/` (para quem) — ver `AGENTS.md §6`. |
 | Storage | `acervo/**`, `data/` | Disco local na Fase 1. `data/state.json` guarda demandas/mensagens (JSON store atômico). |
 
 Portabilidade Fase 2 (Cloudflare Workers + Durable Objects / VPS Hostinger): todo I/O passa por interfaces (`StateStore`, `AcervoStorage`, `Clock`) em `src/orchestrator/core`. Implementações Fase 1 = filesystem; Fase 2 = D1/R2/DO storage. Não use `fs` fora dessas implementações.

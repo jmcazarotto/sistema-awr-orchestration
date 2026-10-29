@@ -33,3 +33,15 @@ describe('OpenAI sem rede: validação, retry e logs', () => {
     expect(calls.parse).not.toHaveBeenCalled(); expect(bus.history(1)[0]).toMatchObject({ type: 'log', payload: { level: 'error' } });
   });
 });
+
+describe('motivo de erro da OpenAI', () => {
+  it('mostra status e motivo sem fragmentos de chave', async () => {
+    calls.generate.mockRejectedValue(Object.assign(new Error('401 Incorrect API key provided: key_uA1j********UbiW. You can find your API key at https://platform.openai.com.'), { status: 401 }));
+    const bus = new EventBus(new MemoryStateStore(), new FakeClock(), new NanoIdGenerator(), 5);
+    const ai = new AiClient(OrchestratorConfigSchema.parse({}), bus, 'test-local-stub');
+    const erro = await ai.photo('prompt').catch((error: Error) => error.message);
+    expect(erro).toContain('401 Incorrect API key provided: [oculta]');
+    expect(erro).not.toMatch(/uA1j|UbiW|401 401/);
+    expect(calls.generate).toHaveBeenCalledTimes(1);
+  });
+});

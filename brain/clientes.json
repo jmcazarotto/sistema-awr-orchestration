@@ -28,7 +28,48 @@
       "botox",
       "fios_sustentacao"
     ],
-    "logo": "_marcas/royal_face/logo.svg",
+    "logo": "_marcas/royal_face/logo.png",
+    "galeriaLogos": [
+      {
+        "arquivo": "_marcas/royal_face/logo-escuro-f28nTCE773MxWKR2O1w82.png",
+        "fundo": "escuro",
+        "principal": true
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-escuro-iOVx4XAvOKlYYVAnXB9sQ.png",
+        "fundo": "escuro",
+        "principal": false
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-escuro-OFfe7js0oxI78t_O8QNIc.png",
+        "fundo": "escuro",
+        "principal": false
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-claro-P17UC95EOfvMA-H3wfxAG.png",
+        "fundo": "claro",
+        "principal": false
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-claro-163j_Pvrd4M9VLhJZilw-.png",
+        "fundo": "claro",
+        "principal": false
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-claro-lDv5cwBR5Wkx1oX3N4Qcq.png",
+        "fundo": "claro",
+        "principal": true
+      },
+      {
+        "arquivo": "_marcas/royal_face/logo-claro-CscgIDyG_fTFob4XhACw2.png",
+        "fundo": "claro",
+        "principal": false
+      }
+    ],
+    "logos": {
+      "claro": "_marcas/royal_face/logo-claro-lDv5cwBR5Wkx1oX3N4Qcq.png",
+      "escuro": "_marcas/royal_face/logo-escuro-f28nTCE773MxWKR2O1w82.png"
+    },
     "cores": {
       "primaria": "#c9a45c",
       "secundaria": "#3f3d3b",

@@ -7,9 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { vi } from 'vitest';
 import { IA_SITUACOES, IA_SITUACAO_INFO, IaModelosSchema } from '../shared/types';
-import type { IaModelos } from '../shared/types';
+import type { ActorId, IaModelos } from '../shared/types';
 import {
-  OrchestratorConfigSchema, PROCEDIMENTOS, SkillIdSchema, TIPOS_TEMPLATE,
+  OrchestratorConfigSchema, PROCEDIMENTOS, SkillIdSchema, TIPOS_TEMPLATE, skillPath,
 } from '../shared/types';
 import type {
   AcervoGrid, Demanda, EventBusPublic, FeedbackHumano, InboxMessage, MessagesFilter,
@@ -71,12 +71,12 @@ export class FakeOrchestrator implements Orchestrator {
     list: () => this.registry().list(),
     get: async id => (await this.registry().list()).find(empresa => empresa.id === id),
     upsert: async input => { const empresa = await this.registry().upsert(input); await seedTemplates(this.templateStore, [empresa], agora); return empresa; },
-    setLogo: async (id, arquivo) => {
+    setLogo: async (id, arquivo, variante = 'principal') => {
       if (!await this.empresas.get(id)) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
-      const path = `_marcas/${id}/logo.${arquivo.nome.split('.').pop()}`;
+      const path = `_marcas/${id}/logo${variante === 'principal' ? '' : `-${variante}`}.${arquivo.nome.split('.').pop()}`;
       await mkdir(join(this.config.ACERVO_DIR, '_marcas', id), { recursive: true });
       await writeFile(join(this.config.ACERVO_DIR, path), arquivo.dados);
-      return this.registry().setLogo(id, path);
+      return this.registry().setLogo(id, path, variante);
     },
   };
   readonly templates: Orchestrator['templates'] = {
@@ -89,11 +89,15 @@ export class FakeOrchestrator implements Orchestrator {
       await this.templateStore.save(template); return template;
     },
   };
+  readonly produzir = vi.fn(async (id: string): Promise<Demanda> => { const demanda = this.demandas.find(d => d.id === id); if (!demanda) throw new OrchestratorError('NOT_FOUND', 'Demanda não encontrada', 404); return demanda; });
   private iaModelos: IaModelos = Object.fromEntries(IA_SITUACOES.map(s => [s, { modelo: IA_SITUACAO_INFO[s].modelos[0]!, effort: null }])) as IaModelos;
+  private pausadosFake: ActorId[] = [];
+  readonly agentes: Orchestrator['agentes'] = { pausados: () => this.pausadosFake, pausar: async id => (this.pausadosFake = [...new Set([...this.pausadosFake, id])]), retomar: async id => (this.pausadosFake = this.pausadosFake.filter(value => value !== id)) };
+  readonly marcas: Orchestrator['marcas'] = { list: async () => [], get: async () => undefined };
   readonly ia: Orchestrator['ia'] = {
     modelos: () => this.iaModelos,
     salvarModelos: async input => (this.iaModelos = IaModelosSchema.parse(input)),
-    uso: () => ({ desde: null, cotacaoUsdBrl: this.config.USD_BRL, itens: [{ provedor: 'jev', modelo: 'jev-latest', chamadas: 2, tokensEntrada: 900, tokensSaida: 10, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL, precificado: true }], total: { chamadas: 2, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL } }),
+    uso: () => ({ desde: null, cotacaoUsdBrl: this.config.USD_BRL, itens: [{ provedor: 'jev', modelo: 'jev-latest', tipo: 'texto', chamadas: 2, tokensEntrada: 900, tokensSaida: 10, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL, precificado: true }], total: { chamadas: 2, usd: 0.0000378, brl: 0.0000378 * this.config.USD_BRL } }),
     zerarUso: async () => ({ desde: null, cotacaoUsdBrl: this.config.USD_BRL, itens: [], total: { chamadas: 0, usd: 0, brl: 0 } }),
   };
   constructor(config = OrchestratorConfigSchema.parse({})) { this.config = config; }
@@ -157,8 +161,8 @@ export async function fixture() {
   const raiz = await mkdtemp(join(tmpdir(), 'awr-server-'));
   const acervoDir = join(raiz, 'acervo');
   const brainDir = join(raiz, 'brain');
-  await Promise.all([mkdir(join(acervoDir, '_staging'), { recursive: true }), mkdir(join(acervoDir, 'botox'), { recursive: true }), mkdir(join(brainDir, 'skills'), { recursive: true })]);
-  await Promise.all(SkillIdSchema.options.map(id => writeFile(join(brainDir, 'skills', `${id}.skill.md`), skillMarkdown(id))));
+  await Promise.all([mkdir(join(acervoDir, '_staging'), { recursive: true }), mkdir(join(acervoDir, 'botox'), { recursive: true }), mkdir(join(brainDir, 'skills', 'procedimentos'), { recursive: true }), mkdir(join(brainDir, 'skills', 'tecnicas'), { recursive: true })]);
+  await Promise.all(SkillIdSchema.options.map(id => writeFile(join(brainDir, skillPath(id)), skillMarkdown(id))));
   const config = OrchestratorConfigSchema.parse({ ACERVO_DIR: acervoDir, BRAIN_DIR: brainDir, DATA_DIR: join(raiz, 'data') });
   const orchestrator = new FakeOrchestrator(config);
   const app = createApp({ orchestrator, config, acervoDir, brainDir });

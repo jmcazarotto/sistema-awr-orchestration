@@ -31,7 +31,7 @@ describe('BrainLoader', () => {
   it('append-only atômico e serial preserva byte a byte todo conteúdo anterior', async () => {
     const f = await fixture();
     try {
-      const path = join(f.config.BRAIN_DIR, 'skills/botox.skill.md'); const before = await readFile(path, 'utf8');
+      const path = join(f.config.BRAIN_DIR, 'skills/procedimentos/botox.skill.md'); const before = await readFile(path, 'utf8');
       const loader = new BrainLoader(f.config.BRAIN_DIR, f.clock, f.bus);
       await Promise.all(['selo cobriu boca', 'texto sem contraste'].map(motivo => loader.appendLearning({ procedimento: 'botox', template: 'antes_depois_1', regra: 'Mantenha textos e selo fora da região tratada.', motivoOriginal: motivo, demandaId: 'DEM-0001' })));
       const after = await readFile(path, 'utf8'); expect(after.startsWith(before)).toBe(true);

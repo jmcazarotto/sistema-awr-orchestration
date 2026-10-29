@@ -1,4 +1,4 @@
-import { ArteMetaSchema, ClassificacaoSchema } from '../../shared/types';
+import { ArteMetaSchema, ClassificacaoSchema, skillPath } from '../../shared/types';
 import type { AcervoGrid, Demanda, InboxMessage, OrchestratorConfig } from '../../shared/types';
 import type { BrainLoader } from '../brain/BrainLoader';
 import type { EventBus } from '../core/EventBus';
@@ -12,7 +12,7 @@ import { metaPath } from '../services/ImageEngine';
 export class ArtDirector {
   constructor(private readonly config: OrchestratorConfig, private readonly bus: EventBus, private readonly brain: BrainLoader,
     private readonly classifier: FastClassifier, private readonly reviewer: VisionReviewer, private readonly storage: AcervoStorage,
-    private readonly grid: () => Promise<AcervoGrid>) {}
+    private readonly grid: () => Promise<AcervoGrid>, private readonly modeloImagem: () => { modelo: string; qualidade: string | null } = () => ({ modelo: 'simulado', qualidade: null })) {}
   async handle(message: InboxMessage): Promise<void> {
     await this.brain.loadAgent('art_director');
     switch (message.action) {
@@ -33,6 +33,14 @@ export class ArtDirector {
       this.bus.log('info', 'Triagem com baixa confiança revisada pelo Diretor', demanda.id, 'art_director');
     }
     await this.brain.loadSkill(classificacao.procedimento);
+    // Demanda de cliente espera o clique em "Produzir" (AGENTS.md §3): fica CLASSIFICADA com produção 'aguardando'.
+    if (classificacao.agenteDesignado === 'van_gogh' && this.config.PRODUCAO_MANUAL_VAN_GOGH) {
+      if (demanda.producao?.etapa === 'aguardando') return;
+      const agora = this.bus.clock.now().toISOString(); const final = classificacao;
+      await this.bus.update(demanda.id, demand => { demand.classificacao = final; demand.criadorAtual = 'van_gogh'; demand.producao = { ...this.modeloImagem(), etapa: 'aguardando', versao: 0, etapas: [{ etapa: 'aguardando', em: agora }] }; }, undefined, undefined, message.id);
+      this.bus.log('info', 'Demanda classificada para o Van Gogh; aguardando o clique em Produzir', demanda.id, 'art_director');
+      return;
+    }
     demanda = await this.bus.update(demanda.id, demand => { demand.classificacao = classificacao; demand.criadorAtual = classificacao.agenteDesignado; if (classificacao.agenteDesignado === 'monalisa') demand.origem = 'acervo'; }, 'EM_PRODUCAO', undefined, message.id);
     await this.produce(demanda, message.id);
   }
@@ -48,7 +56,7 @@ export class ArtDirector {
     if (slot?.preenchido || (slot?.demandaAbertaId && slot.demandaAbertaId !== message.demandaId)) return;
     const existing = this.bus.snapshot().demandas[message.demandaId];
     if (existing && !['CRIADA', 'CLASSIFICADA', 'EM_PRODUCAO'].includes(existing.estado)) return;
-    const classification = ClassificacaoSchema.parse({ procedimento, tipoTemplate, agenteDesignado: 'monalisa', skillFile: `skills/${procedimento}.skill.md`, confianca: 1 });
+    const classification = ClassificacaoSchema.parse({ procedimento, tipoTemplate, agenteDesignado: 'monalisa', skillFile: skillPath(procedimento), confianca: 1 });
     if (!existing) await this.bus.transaction(state => { state.demandas[message.demandaId] = createDemanda(message.demandaId, 'acervo', { briefing: 'Peça de acervo institucional AWR — genérica, reutilizável' }, this.bus.clock.now().toISOString()); });
     if (!existing || existing.estado === 'CRIADA') await this.bus.update(message.demandaId, demand => { demand.classificacao = classification; demand.criadorAtual = 'monalisa'; }, 'CLASSIFICADA', undefined, message.id);
     const demanda = this.bus.getDemanda(message.demandaId).estado === 'CLASSIFICADA'
@@ -132,7 +140,11 @@ export class ArtDirector {
   }
   async tick(): Promise<void> {
     for (const demanda of Object.values(this.bus.snapshot().demandas)) {
-      if (!['EM_PRODUCAO', 'EM_AJUSTE_IA'].includes(demanda.estado) || this.bus.clock.now().getTime() - Date.parse(demanda.updatedAt) < this.config.PRODUCTION_TIMEOUT_MS) continue;
+      // Erro de geração espera o humano; imagem real (OpenAI) pode levar minutos na fila → prazo maior antes de cobrar.
+      if (demanda.producao?.etapa === 'erro') continue;
+      if (demanda.criadorAtual && this.bus.pausados().includes(demanda.criadorAtual)) continue; // pausado: espera retomar
+      const prazo = demanda.producao && demanda.producao.modelo !== 'simulado' ? Math.max(this.config.PRODUCTION_TIMEOUT_MS, 600000) : this.config.PRODUCTION_TIMEOUT_MS;
+      if (!['EM_PRODUCAO', 'EM_AJUSTE_IA'].includes(demanda.estado) || this.bus.clock.now().getTime() - Date.parse(demanda.updatedAt) < prazo) continue;
       const count = this.bus.snapshot().reminders[demanda.id] ?? 0;
       if (count >= 2) continue;
       await this.bus.transaction(state => { state.reminders[demanda.id] = count + 1; });

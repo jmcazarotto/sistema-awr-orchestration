@@ -1,4 +1,5 @@
-import { EmpresaIdSchema, SaveTemplateRequestSchema, TemplateArteSchema, TemplatesQuerySchema } from '../shared/types';
+import { nanoid } from 'nanoid';
+import { ActorIdSchema, EmpresaIdSchema, SaveTemplateRequestSchema, TemplateArteSchema, TemplatesQuerySchema } from '../shared/types';
 import { ClientesRegistry } from './brain/ClientesRegistry';
 import { FsTemplateStore } from './core/FsTemplateStore';
 import { seedTemplates } from './templates/seeds';
@@ -52,15 +53,17 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
   const seed = async () => seedTemplates(templateStore, await clientes.list(), clock.now().toISOString());
   const bus = new EventBus(dependencies.stateStore ?? new FileStateStore(config.DATA_DIR), clock, dependencies.ids ?? new NanoIdGenerator(), config.MAX_HOPS);
   const ia = new IaRegistry(config, bus);
-  const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' ? new AiClient(config, bus, dependencies.apiKey ?? process.env.OPENAI_API_KEY, ia) : undefined;
+  const openaiKey = dependencies.apiKey ?? process.env.OPENAI_API_KEY;
+  // Com chave presente o cliente existe mesmo em mock: a imagem real é ligada por modelo nas Configurações.
+  const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' || openaiKey?.trim() ? new AiClient(config, bus, openaiKey, ia) : undefined;
   const brain = new BrainLoader(config.BRAIN_DIR, clock, bus, config.AI_MODE === 'openai' ? ai : undefined);
   const jevKey = dependencies.jevApiKey ?? process.env.JEV_API_KEY;
   const triagem = new TriagemService(config, bus, jevKey ? new JevClient(config, jevKey, { fetch: dependencies.fetch }) : undefined, ia);
   const classifier = new FastClassifier(config, ai, triagem);
-  const images = new ImageEngine(config, storage, brain, clock, ai);
+  const images = new ImageEngine(config, storage, brain, clock, ai, ia);
   const reviewer = new VisionReviewer(config, storage, brain, ai, dependencies);
   const watcher = new AcervoWatcher(config, bus, storage, dependencies.watchFiles);
-  const director = new ArtDirector(config, bus, brain, classifier, reviewer, storage, () => watcher.grid());
+  const director = new ArtDirector(config, bus, brain, classifier, reviewer, storage, () => watcher.grid(), () => images.modeloImagem('van_gogh'));
   const vanGogh = new VanGogh(bus, brain, images); const monalisa = new Monalisa(bus, brain, images);
   bus.register('art_director', message => director.handle(message));
   bus.register('van_gogh', message => vanGogh.handle(message));
@@ -125,6 +128,22 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
       await bus.sendAndWait(bus.envelope({ action: 'FEEDBACK_HUMANO', from: 'awr_human', to: 'art_director', demandaId: id, hop: demanda.hop, payload: feedback }));
       return bus.getDemanda(id);
     },
+    async produzir(id) {
+      requireStarted(); DemandaIdSchema.parse(id);
+      const atual = bus.getDemanda(id); const producao = atual.producao;
+      if (atual.criadorAtual !== 'van_gogh' || !producao) throw new OrchestratorError('INVALID_TRANSITION', 'A demanda não aguarda produção do Van Gogh');
+      const agora = clock.now().toISOString(); const escolhido = images.modeloImagem('van_gogh');
+      if (atual.estado === 'CLASSIFICADA' && producao.etapa === 'aguardando') {
+        const demanda = await bus.update(id, demand => { demand.producao = { ...producao, ...escolhido, etapa: 'na_fila', solicitadoEm: agora, etapas: [...producao.etapas, { etapa: 'na_fila', em: agora }] }; }, 'EM_PRODUCAO', 'producao_solicitada');
+        await bus.send(bus.envelope({ action: 'DEMANDA_CLASSIFICADA', from: 'system', to: 'art_director', demandaId: id, hop: demanda.hop, payload: { classificacao: demanda.classificacao! } }));
+      } else if (producao.etapa === 'erro' && ['EM_PRODUCAO', 'EM_AJUSTE_IA'].includes(atual.estado)) {
+        const order = bus.snapshot().messages.findLast(message => message.demandaId === id && (message.action === 'PRODUZIR_ARTE' || message.action === 'AJUSTAR_ARTE'));
+        if (!order) throw new OrchestratorError('INVALID_TRANSITION', 'Nenhuma ordem de produção para repetir');
+        await bus.update(id, (demand, state) => { const { erro: _erro, ...resto } = producao; demand.producao = { ...resto, ...escolhido, etapa: 'na_fila', solicitadoEm: agora, etapas: [...producao.etapas, { etapa: 'na_fila', em: agora, detalhe: 'Nova tentativa' }] }; delete state.reminders[id]; });
+        await bus.send(bus.envelope({ ...order, causationId: order.id }));
+      } else throw new OrchestratorError('INVALID_TRANSITION', 'A demanda já está em produção');
+      return bus.getDemanda(id);
+    },
     async resetHops(id) {
       requireStarted(); DemandaIdSchema.parse(id);
       return bus.update(id, demand => {
@@ -139,13 +158,13 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
       list: () => clientes.list(),
       get: async id => (await clientes.list()).find(empresa => empresa.id === id),
       async upsert(input) { const empresa = await clientes.upsert(input); await seedTemplates(templateStore, [empresa], clock.now().toISOString()); return empresa; },
-      async setLogo(id, arquivo) {
+      async setLogo(id, arquivo, variante = 'principal', principal = true) {
         if (!EmpresaIdSchema.safeParse(id).success || !(await clientes.list()).some(empresa => empresa.id === id)) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
         const ext = /\.(png|jpe?g|svg|webp)$/i.exec(arquivo.nome)?.[1]?.toLowerCase();
         if (!ext || arquivo.dados.length > 2 * 1024 * 1024 || !arquivo.dados.length) throw new OrchestratorError('VALIDATION_ERROR', 'Logo deve ser PNG, JPG, SVG ou WebP de até 2 MB.', 400);
-        const path = `_marcas/${id}/logo.${ext === 'jpeg' ? 'jpg' : ext}`;
+        const path = `_marcas/${id}/logo${variante === 'principal' ? '' : `-${variante}-${nanoid()}`}.${ext === 'jpeg' ? 'jpg' : ext}`;
         await storage.write(path, arquivo.dados);
-        return clientes.setLogo(id, path);
+        return clientes.setLogo(id, path, variante, principal);
       },
     },
     templates: {
@@ -166,6 +185,15 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
         const template = TemplateArteSchema.parse({ ...previous, ...input, atualizadoEm: clock.now().toISOString() });
         await templateStore.save(template); return template;
       },
+    },
+    agentes: {
+      pausados: () => bus.pausados(),
+      pausar: id => { ActorIdSchema.parse(id); return bus.definirPausa(id, true); },
+      retomar: id => { ActorIdSchema.parse(id); return bus.definirPausa(id, false); },
+    },
+    marcas: {
+      list: async () => (await brain.listMarcas()).map(({ promptMarca: _p, composicoes: _c, aprendizados: _a, ...marca }) => marca),
+      get: async id => { const marca = await brain.loadMarca(id); if (!marca) return undefined; const { promptMarca: _p, composicoes: _c, aprendizados: _a, ...resto } = marca; return resto; },
     },
     ia: { modelos: () => ia.modelos(), salvarModelos: input => ia.salvarModelos(input), uso: () => ia.uso(), zerarUso: () => ia.zerarUso() },
     acervo: { grid: () => watcher.grid(), fill: (procedimento, tipoTemplate) => { requireStarted(); FillAcervoRequestSchema.parse({ procedimento, tipoTemplate }); return watcher.fill(procedimento, tipoTemplate); } },

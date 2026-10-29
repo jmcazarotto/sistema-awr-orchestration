@@ -47,7 +47,7 @@ describe('integração headless em mock', () => {
       const response = await f.app.humanReview(demand.id, { decisao: 'ajustar', motivo: 'O selo cobriu a região tratada', revisor: 'AWR' });
       expect(response.hop).toBe(1); await f.bus.whenIdle();
       expect(f.app.getDemanda(demand.id)).toMatchObject({ estado: 'AGUARDANDO_APROVACAO_AWR', versaoAtual: 2, tentativaDiretor: 1, hop: 1 });
-      expect(await readFile(join(f.config.BRAIN_DIR, 'skills/botox.skill.md'), 'utf8')).toContain('### L01');
+      expect(await readFile(join(f.config.BRAIN_DIR, 'skills/procedimentos/botox.skill.md'), 'utf8')).toContain('### L01');
       const meta = ArteMetaSchema.parse(JSON.parse((await f.storage.read(`_staging/${demand.id}__v2.meta.json`)).toString())); expect(meta.aprendizadosAplicados).toContain('L01');
       const review = f.app.getDemanda(demand.id)?.ultimoReview; expect(review?.itens.some(item => item.id === 'L01')).toBe(true);
       expect((await f.storage.read(`_staging/${demand.id}__v1.png`)).equals(await f.storage.read(`_staging/${demand.id}__v2.png`))).toBe(false);

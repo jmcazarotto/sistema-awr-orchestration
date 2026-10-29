@@ -143,7 +143,8 @@ export type Triagem = z.infer<typeof TriagemSchema>;
 
 export const SeveridadeSchema = z.enum(['critico', 'normal']);
 export type Severidade = z.infer<typeof SeveridadeSchema>;
-export const RubricaIdSchema = z.string().regex(/^[RLGC]\d{2,}$/);
+/** R = procedimento, M = marca, T = técnica do agente, L/G/C = aprendizados. */
+export const RubricaIdSchema = z.string().regex(/^[RMTLGC]\d{2,}$/);
 export const RubricaItemSchema = z.object({
   id: RubricaIdSchema,
   severidade: SeveridadeSchema,
@@ -249,6 +250,13 @@ const arteMetaFields = {
   aprendizadosAplicados: z.array(z.string().regex(/^[LGC]\d{2,}$/)),
   ajustesCompliance: z.array(TextoSchema),
   ilustrativo: z.boolean().optional(),
+  /** Arte final por IA (Van Gogh): marca, composição, referências enviadas, textos exatos e onde o logo oficial entrou. */
+  arteFinal: z.object({
+    marca: z.string().nullable(), composicao: z.string(), referencias: z.array(z.string()), textosExatos: z.array(z.string()),
+    logo: z.object({ posicao: z.string(), variante: z.string(), arquivo: z.string() }).nullable(),
+  }).optional(),
+  /** Modelo de imagem usado na camada fotográfica ('simulado' = Sharp/SVG, sem custo). */
+  modeloImagem: z.string().optional(),
   geradoEm: TimestampSchema,
 };
 export const ArteMetaSchema = z.discriminatedUnion('ator', [
@@ -261,6 +269,24 @@ export const ArteMetaSchema = z.discriminatedUnion('ator', [
   }),
 ]);
 export type ArteMeta = z.infer<typeof ArteMetaSchema>;
+
+/** Etapas visíveis da geração da arte (Van Gogh). 'aguardando' = classificada, esperando o clique em Produzir. */
+export const ETAPAS_PRODUCAO = ['aguardando', 'na_fila', 'planejando', 'gerando', 'compondo', 'entregue', 'erro'] as const;
+export const EtapaProducaoSchema = z.enum(ETAPAS_PRODUCAO);
+export type EtapaProducao = z.infer<typeof EtapaProducaoSchema>;
+export const ETAPA_PRODUCAO_LABELS: Record<EtapaProducao, string> = { aguardando: 'Aguardando produção', na_fila: 'Na fila', planejando: 'Planejando', gerando: 'Gerando imagem', compondo: 'Compondo a arte', entregue: 'Entregue ao Diretor', erro: 'Erro na geração' };
+export const ProducaoSchema = z.object({
+  etapa: EtapaProducaoSchema,
+  /** Modelo de imagem escolhido nas Configurações no momento do pedido ('simulado' = sem custo). */
+  modelo: z.string().min(1),
+  qualidade: z.string().nullable(),
+  versao: z.number().int().nonnegative(),
+  solicitadoEm: TimestampSchema.optional(),
+  etapas: z.array(z.object({ etapa: EtapaProducaoSchema, em: TimestampSchema, detalhe: z.string().optional() })),
+  erro: z.string().optional(),
+  custo: z.object({ usd: z.number().nonnegative(), brl: z.number().nonnegative(), tokensEntrada: z.number().int().nonnegative(), tokensSaida: z.number().int().nonnegative() }).optional(),
+});
+export type Producao = z.infer<typeof ProducaoSchema>;
 
 /** O motivo hop_limit identifica a exceção operacional explícita do §4 à tabela do §3. */
 export const TransicaoDemandaSchema = z.object({
@@ -296,6 +322,8 @@ export const DemandaSchema = z.object({
   createdAt: TimestampSchema,
   updatedAt: TimestampSchema,
   finalPath: TextoSchema.optional(),
+  /** Andamento da geração (fila → planejando → gerando → compondo → entregue). */
+  producao: ProducaoSchema.optional(),
 });
 export type Demanda = z.infer<typeof DemandaSchema>;
 
@@ -321,11 +349,12 @@ export const AcervoGridSchema = z.object({
 });
 export type AcervoGrid = z.infer<typeof AcervoGridSchema>;
 
-export const SSE_EVENT_TYPES = ['actor.status', 'message.sent', 'demand.updated', 'review.result', 'acervo.updated', 'brain.learning', 'log', 'triagem.started', 'triagem.result'] as const;
+export const SSE_EVENT_TYPES = ['agentes.pausa', 'actor.status', 'message.sent', 'demand.updated', 'review.result', 'acervo.updated', 'brain.learning', 'log', 'triagem.started', 'triagem.result'] as const;
 export const SSE_HEARTBEAT_MS = 15000;
 export const SSE_RETRY_MS = 3000;
 export const SSE_HISTORY_LIMIT = 1000;
 const sseOptions = [
+  z.object({ type: z.literal('agentes.pausa'), payload: z.object({ pausados: z.array(ActorIdSchema) }) }),
   z.object({ type: z.literal('actor.status'), payload: z.object({ actorId: ActorIdSchema, status: ActorStatusSchema, demandaId: DemandaIdSchema.nullable() }) }),
   z.object({ type: z.literal('message.sent'), payload: InboxMessageSchema }),
   z.object({ type: z.literal('demand.updated'), payload: DemandaSchema }),
@@ -350,6 +379,7 @@ export const SseEnvelopeSchema = z.discriminatedUnion('type', [
   sseOptions[6].extend(sseEnvelopeFields),
   sseOptions[7].extend(sseEnvelopeFields),
   sseOptions[8].extend(sseEnvelopeFields),
+  sseOptions[9].extend(sseEnvelopeFields),
 ]);
 export type SseEnvelope = z.infer<typeof SseEnvelopeSchema>;
 
@@ -376,6 +406,8 @@ export const OrchestratorConfigSchema = z.object({
   MAX_DIRECTOR_ATTEMPTS: z.number().int().positive().default(3),
   DIRECTOR_TICK_MS: z.number().int().positive().default(15000),
   PRODUCTION_TIMEOUT_MS: z.number().int().positive().default(120000),
+  /** Demandas de cliente (Van Gogh) esperam o clique em "Produzir" antes de gerar. */
+  PRODUCAO_MANUAL_VAN_GOGH: z.boolean().default(true),
   ACERVO_HEARTBEAT_MS: z.number().int().positive().default(30000),
   ACERVO_AUTOFILL: z.boolean().default(true),
   PORT: z.number().int().min(1).max(65535).default(8787),
@@ -431,8 +463,12 @@ export const ListMessagesResponseSchema = z.object({ messages: z.array(InboxMess
 export type ListMessagesResponse = z.infer<typeof ListMessagesResponseSchema>;
 export const DemandaParamsSchema = z.strictObject({ id: DemandaIdSchema });
 export type DemandaParams = z.infer<typeof DemandaParamsSchema>;
-export const SkillIdSchema = z.enum([...PROCEDIMENTOS, 'template_composition']);
+/** Procedimentos (o quê) + técnicas de produção por agente (como). Marcas (para quem) ficam em skills/marcas/<rede>/. */
+export const TECNICAS = ['template_composition', 'arte_final_ia'] as const;
+export const SkillIdSchema = z.enum([...PROCEDIMENTOS, ...TECNICAS]);
 export type SkillId = z.infer<typeof SkillIdSchema>;
+/** Caminho da skill relativo a brain/ (única fonte da convenção de pastas). */
+export const skillPath = (id: SkillId): string => (PROCEDIMENTOS as readonly string[]).includes(id) ? `skills/procedimentos/${id}.skill.md` : `skills/tecnicas/${id}.skill.md`;
 export const SkillParamsSchema = z.strictObject({ id: SkillIdSchema });
 export type SkillParams = z.infer<typeof SkillParamsSchema>;
 export const SkillSummarySchema = z.object({
@@ -482,12 +518,18 @@ export const EmpresaSchema = z.object({
   procedimentos: z.array(ProcedimentoSchema).default([...PROCEDIMENTOS]),
   /** Caminho público da logo (servido em /acervo/*), ex.: "_marcas/royal_face/logo.svg". */
   logo: z.string().min(1).nullable().default(null),
+  galeriaLogos: z.array(z.object({ arquivo: z.string().min(1), fundo: z.enum(['claro', 'escuro']), principal: z.boolean() })).optional(),
+  /** Variantes oficiais em PNG aplicadas na arte final: para fundo claro e para fundo escuro. */
+  logos: z.object({ claro: z.string().min(1).nullable().default(null), escuro: z.string().min(1).nullable().default(null) }).default({ claro: null, escuro: null }),
   /** Paleta da marca (hex). */
   cores: z.object({ primaria: z.string(), secundaria: z.string(), texto: z.string() })
     .default({ primaria: '#c9a45c', secundaria: '#3f3d3b', texto: '#ffffff' }),
 });
 export type Empresa = z.infer<typeof EmpresaSchema>;
-export const EmpresaInputSchema = EmpresaSchema.omit({ logo: true }).extend({ logo: z.string().min(1).nullable().optional() });
+export const EmpresaInputSchema = EmpresaSchema.omit({ logo: true, logos: true }).extend({ logo: z.string().min(1).nullable().optional(), logos: EmpresaSchema.shape.logos.optional() });
+export const LOGO_VARIANTES = ['principal', 'claro', 'escuro'] as const;
+export const LogoVarianteSchema = z.enum(LOGO_VARIANTES);
+export type LogoVariante = z.infer<typeof LogoVarianteSchema>;
 export type EmpresaInput = z.infer<typeof EmpresaInputSchema>;
 
 /** Tipos de elemento posicionáveis no editor de template (canvas 2D). */
@@ -506,6 +548,7 @@ export const ElementoEstiloSchema = z.object({
   raio: z.number().nonnegative().default(0),
   borda: z.object({ cor: z.string(), largura: z.number().nonnegative() }).nullable().default(null),
   sombra: z.boolean().default(false),
+  sombraConfig: z.object({ cor: z.string(), opacidade: z.number().min(0).max(1), x: z.number(), y: z.number(), desfoque: z.number().nonnegative(), expansao: z.number() }).optional(),
   opacidade: z.number().min(0).max(1).default(1),
   caixaAlta: z.boolean().default(false),
 });
@@ -521,6 +564,8 @@ export const ElementoTemplateSchema = z.object({
   bloqueado: z.boolean().default(false),
   /** Texto placeholder (títulos/preço) — pode conter {{procedimento}}, {{preco}}, {{parcelas}}. */
   conteudo: z.string().default(''),
+  /** Logo escolhida na biblioteca da empresa; ausente usa a logo principal. */
+  logoArquivo: z.string().min(1).nullable().optional(),
   estilo: ElementoEstiloSchema.default(ElementoEstiloSchema.parse({})),
 });
 export type ElementoTemplate = z.infer<typeof ElementoTemplateSchema>;
@@ -573,24 +618,32 @@ export const IaEffortSchema = z.enum(IA_EFFORTS);
 export type IaEffort = z.infer<typeof IaEffortSchema>;
 export const IA_EFFORT_LABELS: Record<IaEffort, string> = { baixo: 'Baixo', medio: 'Médio', alto: 'Alto', muito_alto: 'Muito alto', maximo: 'Máximo', ultra: 'Ultra' };
 export const IA_EFFORT_API: Record<IaEffort, string> = { baixo: 'low', medio: 'medium', alto: 'high', muito_alto: 'xhigh', maximo: 'max', ultra: 'ultra' };
-export type IaProvedor = 'jev' | 'openai_decisions' | 'openai';
+export type IaProvedor = 'jev' | 'openai_decisions' | 'openai' | 'local';
 
 export interface IaModeloCatalogo {
   id: string; nome: string; versao: string; provedor: IaProvedor; descricao: string;
   /** Esforços aceitos; vazio = não se aplica. Em modelos de imagem o esforço vira a qualidade. */
   efforts: readonly IaEffort[];
-  /** USD por 1M tokens (null = preço não configurado). */
+  /** USD por 1M tokens (null = preço não configurado). Em imagem: entrada = texto do prompt, saída = tokens da imagem. */
   precoEntrada: number | null; precoSaida: number | null;
+  /** Só modelos de imagem: USD por 1M tokens de imagem de entrada (referência/edição). */
+  precoImagemEntrada?: number;
+  tipo: 'texto' | 'imagem';
 }
 export const IA_CATALOGO: readonly IaModeloCatalogo[] = [
-  { id: 'jev-latest', nome: 'Jev', versao: 'latest', provedor: 'jev', descricao: 'TypeSafe AI · escolhas com probabilidade calibrada', efforts: [], precoEntrada: 0.042, precoSaida: 0 },
-  { id: 'gpt-6-luna-decisions', nome: 'Luna', versao: '6.0', provedor: 'openai_decisions', descricao: 'OpenAI Decisions API · Sim/Não e escolhas, aceita imagem', efforts: [], precoEntrada: 0.1, precoSaida: 0 },
-  { id: 'gpt-6.1-terra', nome: 'Terra', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · texto e feedback detalhado', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null },
-  { id: 'gpt-6.1-sol', nome: 'Codex Sol', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · raciocínio profundo', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo', 'ultra'], precoEntrada: null, precoSaida: null },
-  { id: 'gpt-image-2', nome: 'GPT Image', versao: '2', provedor: 'openai', descricao: 'OpenAI · camada fotográfica (esforço = qualidade)', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null },
+  { id: 'jev-latest', nome: 'Jev', versao: 'latest', provedor: 'jev', descricao: 'TypeSafe AI · escolhas com probabilidade calibrada', efforts: [], precoEntrada: 0.042, precoSaida: 0, tipo: 'texto' },
+  { id: 'gpt-6-luna-decisions', nome: 'Luna', versao: '6.0', provedor: 'openai_decisions', descricao: 'OpenAI Decisions API · Sim/Não e escolhas, aceita imagem', efforts: [], precoEntrada: 0.1, precoSaida: 0, tipo: 'texto' },
+  { id: 'gpt-6.1-terra', nome: 'Terra', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · texto e feedback detalhado', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null, tipo: 'texto' },
+  { id: 'gpt-6.1-sol', nome: 'Codex Sol', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · raciocínio profundo', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo', 'ultra'], precoEntrada: null, precoSaida: null, tipo: 'texto' },
+  // Preços oficiais OpenAI (out/2026), por 1M tokens: texto US$ 5, imagem de entrada US$ 8, imagem gerada US$ 30.
+  { id: 'gpt-image-2', nome: 'GPT Image', versao: '2.0', provedor: 'openai', descricao: 'OpenAI · camada fotográfica (esforço = qualidade)', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
+  { id: 'gpt-image-2.5-flare', nome: 'GPT Image 2.5 Flare', versao: '2.5', provedor: 'openai', descricao: 'OpenAI · rápido, alta qualidade no dia a dia', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
+  { id: 'gpt-image-2.5-sunburst', nome: 'GPT Image 2.5 Sunburst', versao: '2.5', provedor: 'openai', descricao: 'OpenAI · GPT Image 2.5 Sunburst', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
+  { id: 'simulado', nome: 'Simulado', versao: 'local', provedor: 'local', descricao: 'Sharp/SVG no servidor · sem chamada à OpenAI, sem custo', efforts: [], precoEntrada: 0, precoSaida: 0, tipo: 'imagem' },
 ];
 export const iaModelo = (id: string) => IA_CATALOGO.find(modelo => modelo.id === id);
-export const iaModeloLabel = (id: string) => { const m = iaModelo(id); return m ? `${m.nome} ${m.versao}` : id; };
+export const iaModeloLabel = (id: string) => { const m = iaModelo(id); return m ? (m.nome.includes(m.versao) || m.provedor === 'local' ? m.nome : `${m.nome} ${m.versao}`) : id; };
+export const IMAGEM_MODELOS = ['simulado', 'gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst'] as const;
 
 export interface IaSituacaoInfo { label: string; agente: string; descricao: string; modelos: readonly string[] }
 export const IA_SITUACAO_INFO: Record<IaSituacao, IaSituacaoInfo> = {
@@ -598,8 +651,8 @@ export const IA_SITUACAO_INFO: Record<IaSituacao, IaSituacaoInfo> = {
   rubrica: { label: 'Revisão visual (rubrica Sim/Não)', agente: 'Diretor de Arte', descricao: 'Avalia cada item da rubrica olhando a arte.', modelos: ['gpt-6-luna-decisions', 'gpt-6.1-terra', 'gpt-6.1-sol'] },
   feedback: { label: 'Feedback de correção', agente: 'Diretor de Arte', descricao: 'Redige o que corrigir quando a arte é reprovada.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna-decisions'] },
   aprendizado: { label: 'Aprendizado do Cérebro', agente: 'Cérebro (Skills)', descricao: 'Transforma o motivo da reprovação humana em regra da skill.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol'] },
-  imagem_van_gogh: { label: 'Geração de imagem · demandas de clientes', agente: 'Van Gogh', descricao: 'Camada fotográfica das artes pedidas por clientes.', modelos: ['gpt-image-2'] },
-  imagem_monalisa: { label: 'Geração de imagem · acervo', agente: 'Monalisa', descricao: 'Camada fotográfica das artes de abastecimento do acervo.', modelos: ['gpt-image-2'] },
+  imagem_van_gogh: { label: 'Geração de imagem · demandas de clientes', agente: 'Van Gogh', descricao: 'Camada fotográfica das artes pedidas por clientes.', modelos: IMAGEM_MODELOS },
+  imagem_monalisa: { label: 'Geração de imagem · acervo', agente: 'Monalisa', descricao: 'Camada fotográfica das artes de abastecimento do acervo.', modelos: IMAGEM_MODELOS },
 };
 export const IaModeloConfigSchema = z.object({ modelo: z.string().min(1), effort: IaEffortSchema.nullable() });
 export type IaModeloConfig = z.infer<typeof IaModeloConfigSchema>;
@@ -615,7 +668,9 @@ export type IaModelos = z.infer<typeof IaModelosSchema>;
 export const IaModelosResponseSchema = z.object({ modelos: IaModelosSchema });
 
 export const IaUsoItemSchema = z.object({
-  provedor: z.enum(['jev', 'openai_decisions', 'openai']), modelo: z.string().min(1),
+  provedor: z.enum(['jev', 'openai_decisions', 'openai', 'local']), modelo: z.string().min(1),
+  /** 'imagem': chamadas = imagens geradas. */
+  tipo: z.enum(['texto', 'imagem']),
   chamadas: z.number().int().nonnegative(), tokensEntrada: z.number().int().nonnegative(), tokensSaida: z.number().int().nonnegative(),
   usd: z.number().nonnegative(), brl: z.number().nonnegative(),
   /** false quando o modelo não tem preço configurado (custo exibido como indisponível). */
@@ -627,6 +682,23 @@ export const IaUsoResponseSchema = z.object({
   total: z.object({ chamadas: z.number().int().nonnegative(), usd: z.number().nonnegative(), brl: z.number().nonnegative() }),
 });
 export type IaUsoResponse = z.infer<typeof IaUsoResponseSchema>;
+
+/* ───────────── Skills de marca (brain/skills/marcas/<rede>/) ───────────── */
+export const COMPOSICOES = ['modelo_destaque', 'close_procedimento', 'informativa_clean', 'antes_depois_editorial', 'corporal'] as const;
+export const ReferenciaMarcaSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_]+$/), arquivo: z.string().min(1), procedimento: z.string().min(1), composicao: z.string().min(1),
+  oferta: z.boolean(), usarCopy: z.boolean(), notas: z.string(),
+});
+export type ReferenciaMarca = z.infer<typeof ReferenciaMarcaSchema>;
+export const MarcaSkillSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_]+$/), label: TextoSchema, versao: z.number().int().positive(), atualizadoEm: z.string(),
+  empresas: z.array(z.string()), skillFile: TextoSchema, conteudo: z.string(), visualSystem: z.string(),
+  rubrica: z.array(RubricaItemSchema), referencias: z.array(ReferenciaMarcaSchema),
+});
+export type MarcaSkill = z.infer<typeof MarcaSkillSchema>;
+export const AgentesPausaResponseSchema = z.object({ pausados: z.array(ActorIdSchema) });
+export const ListMarcasResponseSchema = z.object({ marcas: z.array(MarcaSkillSchema.omit({ conteudo: true, visualSystem: true })) });
+export const MarcaResponseSchema = z.object({ marca: MarcaSkillSchema });
 
 export interface Orchestrator {
   readonly bus: EventBusPublic;
@@ -642,17 +714,24 @@ export interface Orchestrator {
   getDemanda(id: string): Demanda | undefined;
   listMessages(filtro?: MessagesFilter): InboxMessage[];
   resetHops(demandaId: string): Promise<Demanda>;
+  /** Coloca na fila do Van Gogh uma demanda classificada que aguarda produção (ou repete após erro). */
+  produzir(demandaId: string): Promise<Demanda>;
   readonly empresas: {
     list(): Promise<Empresa[]>;
     get(id: string): Promise<Empresa | undefined>;
     upsert(input: EmpresaInput): Promise<Empresa>;
-    setLogo(id: string, arquivo: { nome: string; dados: Buffer }): Promise<Empresa>;
+    /** variante: 'principal' (ícone/cadastro), 'claro' (logo para fundo claro) ou 'escuro' (logo para fundo escuro) — as duas últimas entram na arte final. */
+    setLogo(id: string, arquivo: { nome: string; dados: Buffer }, variante?: LogoVariante, principal?: boolean): Promise<Empresa>;
   };
   readonly templates: {
     list(filtro?: TemplatesQuery): Promise<TemplateArte[]>;
     get(id: string): Promise<TemplateArte | undefined>;
     save(id: string, input: SaveTemplateRequest): Promise<TemplateArte>;
   };
+  /** Pausa por agente: mensagens ficam na fila (pendentes) até retomar; a geração em andamento termina. */
+  readonly agentes: { pausados(): ActorId[]; pausar(id: ActorId): Promise<ActorId[]>; retomar(id: ActorId): Promise<ActorId[]> };
+  /** Skills de marca (brain/skills/marcas/<rede>/): identidade visual, rubrica M e referências aprovadas. */
+  readonly marcas: { list(): Promise<MarcaSkill[]>; get(id: string): Promise<MarcaSkill | undefined> };
   /** Modelos de IA por situação e uso/custo acumulado das integrações. */
   readonly ia: {
     modelos(): IaModelos;

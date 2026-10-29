@@ -80,7 +80,7 @@ CRIADA ─▶ CLASSIFICADA ─▶ EM_PRODUCAO ─▶ EM_REVISAO_DIRETOR ─┬�
 | De | Para | Disparo |
 |---|---|---|
 | `CRIADA` | `CLASSIFICADA` | `FastClassifier` retorna decisão tipada |
-| `CLASSIFICADA` | `EM_PRODUCAO` | Diretor despacha `PRODUZIR_ARTE` |
+| `CLASSIFICADA` | `EM_PRODUCAO` | Diretor despacha `PRODUZIR_ARTE`. Demanda de cliente (Van Gogh) com `PRODUCAO_MANUAL_VAN_GOGH=true` fica `CLASSIFICADA` com `producao.etapa='aguardando'` até `POST /api/demandas/:id/produzir` |
 | `EM_PRODUCAO` | `EM_REVISAO_DIRETOR` | Criador envia `ARTE_ENTREGUE` |
 | `EM_REVISAO_DIRETOR` | `EM_AJUSTE_IA` | Rubrica reprovada e `tentativa < MAX_DIRECTOR_ATTEMPTS` |
 | `EM_AJUSTE_IA` | `EM_REVISAO_DIRETOR` | Criador reenvia `ARTE_ENTREGUE` |
@@ -88,6 +88,8 @@ CRIADA ─▶ CLASSIFICADA ─▶ EM_PRODUCAO ─▶ EM_REVISAO_DIRETOR ─┬�
 | `AGUARDANDO_APROVACAO_AWR` | `APROVADA_SALVA_NO_ACERVO` | Humano "Aprovar" → arquivo movido de `_staging/` para `acervo/<procedimento>/` |
 | `AGUARDANDO_APROVACAO_AWR` | `REPROVADA_HUMANO` | Humano "Solicitar Ajuste" + motivo → `BrainLoader.appendLearning()` |
 | `REPROVADA_HUMANO` | `EM_PRODUCAO` | Diretor despacha `AJUSTAR_ARTE` ao criador original (hop+1) |
+
+**Andamento da produção (`demanda.producao`)** — não é estado da máquina, é a trilha visível da geração: `aguardando → na_fila → planejando → gerando → compondo → entregue` (ou `erro`). O inbox serial do Van Gogh é a fila. O modelo de imagem vem de Configurações › Modelos de IA (`simulado` = Sharp/SVG sem custo; `gpt-image-2`, `gpt-image-2.5-flare`, `gpt-image-2.5-sunburst` = OpenAI). Erro de geração é reconhecido no inbox (sem nova tentativa paga automática; o scheduler ignora a demanda) e só volta à fila por "Tentar novamente" (mesmo endpoint). A reprovação simulada do revisor mock nunca recai sobre imagem gerada na OpenAI.
 
 Estados terminais: `APROVADA_SALVA_NO_ACERVO`. Transições fora desta tabela são **erro** e devem ser rejeitadas pelo `EventBus`.
 
@@ -142,7 +144,17 @@ modelos: { ... }            # chaves lógicas → resolvidas por env (ver CLAUDE
 
 O conteúdo de `## SOUL` + `## Regras Invioláveis` vira o *system prompt* do ator.
 
-### 6.2 `brain/skills/<procedimento>.skill.md`
+**Organização em camadas** (combinadas em tempo de execução; caminho único em `skillPath()` de `src/shared/types.ts`):
+
+| Camada | Pasta | Responde | Rubrica |
+|---|---|---|---|
+| Procedimento | `brain/skills/procedimentos/<procedimento>.skill.md` | O quê (clínico + compliance), neutro de marca | `Rnn` |
+| Técnica do agente | `brain/skills/tecnicas/<tecnica>.skill.md` | Como produzir (`template_composition` → Monalisa; `arte_final_ia` → Van Gogh) | `Tnn` |
+| Marca | `brain/skills/marcas/<rede>/marca.skill.md` + `visual-system.md` + `referencias.md` | Para quem (identidade visual da rede; unidades herdam) | `Mnn` |
+
+Precedência no prompt: briefing → referência indicada no briefing → marca → procedimento → técnica. A paleta do procedimento só vale quando não há skill de marca.
+
+### 6.2 `brain/skills/procedimentos/<procedimento>.skill.md`
 
 ~~~markdown
 ---
@@ -174,9 +186,9 @@ atualizado_em: 2026-10-28
 
 **Parsing:** os `###` de template são lidos **apenas dentro do §3**; outros `###` (ex.: `### Compliance` no §1) são livres.
 
-**Rubrica:** linhas no formato exato `- [Rnn][critico|normal] Pergunta?`. Regra de aprovação:
+**Rubrica:** linhas no formato exato `- [Rnn][critico|normal] Pergunta?` (marca usa `Mnn`, técnica `Tnn`; a linha precisa terminar em `?`). Regra de aprovação:
 todos os itens `critico` = **Sim** **e** ≥ 80% dos itens `normal` = **Sim**.
-Aprendizados ativos do Self-Improvement Log viram itens extras `[Lnn][critico]` na rubrica.
+Aprendizados ativos do Self-Improvement Log viram itens extras `[Lnn][critico]` na rubrica. Na arte final por IA (Van Gogh) o Diretor avalia R + M + T.
 
 **Variáveis do Prompt Base** (substituídas pelo `ImageEngine`):
 `{{procedimento_label}}` `{{template_id}}` `{{template_descricao}}` `{{headline}}` `{{cta}}`
@@ -191,11 +203,22 @@ Aprendizados ativos do Self-Improvement Log viram itens extras `[Lnn][critico]` 
 - **Status:** ativo
 ```
 
-### 6.3 `brain/skills/template_composition.skill.md`
+### 6.3 `brain/skills/tecnicas/*.skill.md`
 
-Skill transversal: geometria dos 4 tipos de template (grid, safe-area, posições de headline/CTA/selo/logo), formatos de saída (1080×1350 feed 4:5 padrão; 1080×1920 stories opcional) e regras de composição híbrida (Sharp/SVG + `gpt-image-2`).
+- `template_composition` (Monalisa e modo Simulado): geometria dos 4 tipos de template (grid, safe-area, posições de headline/CTA/selo/logo), formatos (1080×1350 feed 4:5; 1080×1920 stories) e composição híbrida (Sharp/SVG + camada fotográfica).
+- `arte_final_ia` (Van Gogh com modelo real): a IA gera a arte completa. Mesmas seções numeradas; §4 traz o Prompt Base com `{{marca_prompt}}` `{{procedimento_label}}` `{{composicao}}` `{{procedimento_contexto}}` `{{textos_exatos}}` `{{oferta}}` `{{disclaimer}}` `{{referencias}}` `{{briefing_cliente}}` `{{feedback_ajuste}}` `{{aprendizados}}`; §5 rubrica `Tnn`. `antes_depois_*` não é gerado por IA (exige fotos reais).
 
-### 6.4 `brain/memory/*.md`
+### 6.4 `brain/skills/marcas/<rede>/`
+
+- `marca.skill.md` — front-matter (`id` = id da rede em `clientes.json`, `label`, `versao`, `atualizado_em`, `empresas`) e seções: `## 1. Identidade e Precedência`, `## 2. Regras Obrigatórias`, `## 3. Composições Aprovadas` (`### <composicao>`: `modelo_destaque`, `close_procedimento`, `informativa_clean`, `antes_depois_editorial`, `corporal`), `## 4. Diretrizes para Geração por IA` (bloco ```prompt), `## 5. Checklist de Rubrica da Marca` (`- [Mnn][critico|normal] Pergunta?`), `## Self-Improvement Log` (APPEND-ONLY).
+- `visual-system.md` — referência completa (paleta, tipografia, logo, ofertas), lida pelo revisor.
+- `referencias.md` — front-matter `raiz:` + tabela em `## Índice`: `| id | arquivo | procedimento | composicao | oferta | usar_copy | notas |`. Arquivos em `acervo/<raiz>/<arquivo>`. `usar_copy: nao` = só layout (copy fere compliance).
+- Logos oficiais: PNG/SVG cadastrados em Empresas (`logos.claro` para fundo claro, `logos.escuro` para fundo escuro; `logo` principal como reserva), aplicados sem alterar pixels na zona mais limpa da arte.
+- A página `#/empresas/:id` permite configurar a empresa e sua `galeriaLogos`: lista de `{ arquivo, fundo: claro|escuro, principal: boolean }`. Uploads de variantes são aditivos e têm caminhos únicos. Múltiplas logos podem ser principais por fundo; o ImageEngine alterna entre as principais, ou entre todas quando nenhuma está marcada. `logos.claro/escuro` continuam como referência compatível (primeira principal ou primeira disponível); cadastros legados são preservados. Remover da galeria desvincula o arquivo sem apagá-lo do acervo.
+- Variações por peça (preço, parcelamento, nome, unidade) vêm **somente do briefing**; a marca não muda por unidade.
+- No editor de templates, elementos `logo` podem salvar `logoArquivo` escolhido da biblioteca da empresa; ausente/null usa a logo principal. `estilo.sombra` habilita a sombra e `sombraConfig` opcional configura cor, opacidade (0–1), deslocamentos x/y, desfoque e expansão (px). Templates antigos preservam a sombra padrão quando essa configuração não existe.
+
+### 6.5 `brain/memory/*.md`
 
 `global_learnings.md` (erros que não podem se repetir, válidos para todos os procedimentos) e `client_preferences.md` (preferências por clínica/cliente). Mesmo formato de entrada do Self-Improvement Log, com `escopo:` em vez de `template`.
 

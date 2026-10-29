@@ -34,6 +34,8 @@ atualizado_em: 2026-10-28
 
 ## 2. Diretrizes Visuais e Paleta
 
+> **Camadas:** esta paleta vale só quando a empresa **não** tem skill de marca (`skills/marcas/<rede>/`). Havendo marca, paleta, tipografia e logo vêm dela; aqui ficam as diretrizes clínicas da imagem.
+
 **Paleta predominante (arte do procedimento):**
 - Champagne `#E9DCC9` e off-white `#F6F7F9` (fundos)
 - Dourado fosco `#B89B72` (acento/selo, uso discreto)

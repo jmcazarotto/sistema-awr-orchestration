@@ -1,7 +1,7 @@
 import { readFile, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
-import { LearningSchema, RubricaItemSchema, SkillDetailSchema } from '../shared/types';
-import type { SkillDetail, SkillId } from '../shared/types';
+import { LearningSchema, PROCEDIMENTOS, RubricaItemSchema, SkillDetailSchema, skillPath } from '../shared/types';
+import type { Procedimento, SkillDetail, SkillId } from '../shared/types';
 import { ApiFailure } from './http';
 
 function contido(raiz: string, destino: string): boolean {
@@ -39,7 +39,7 @@ export async function readContainedFile(raiz: string, caminho: string): Promise<
 }
 
 export async function readSkill(brainDir: string, id: SkillId): Promise<SkillDetail> {
-  const conteudo = (await readContainedFile(resolve(brainDir, 'skills'), `${id}.skill.md`)).toString('utf8');
+  const conteudo = (await readContainedFile(resolve(brainDir), skillPath(id))).toString('utf8');
   const texto = conteudo.replace(/\r\n/g, '\n');
   const frontMatter = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(texto)?.[1];
   if (!frontMatter) throw new Error('Front-matter de skill ausente');
@@ -49,7 +49,7 @@ export async function readSkill(brainDir: string, id: SkillId): Promise<SkillDet
     return [[campo[1], campo[2]?.replace(/^(['"])(.*)\1$/, '$2')]];
   }));
   const rubricaTexto = /^## 5\.[^\n]*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m.exec(texto)?.[1] ?? '';
-  const rubrica = [...rubricaTexto.matchAll(/^- \[(R\d{2,})\]\[(critico|normal)\] (.+)$/gm)]
+  const rubrica = [...rubricaTexto.matchAll(/^- \[([RMT]\d{2,})\]\[(critico|normal)\] (.+)$/gm)]
     .map(item => RubricaItemSchema.parse({ id: item[1], severidade: item[2], pergunta: item[3] }));
   const log = /^## Self-Improvement Log\s*\n([\s\S]*)/m.exec(texto)?.[1] ?? '';
   const aprendizados = [...log.matchAll(/^### ([LGC]\d{2,}) · ([^\n]+)\n([\s\S]*?)(?=^### |$(?![\s\S]))/gm)].map(entrada => {
@@ -60,7 +60,7 @@ export async function readSkill(brainDir: string, id: SkillId): Promise<SkillDet
     const motivo = campo('Motivo original');
     return LearningSchema.parse({
       id: entrada[1], createdAt: new Date(data ?? '').toISOString(),
-      ...(id !== 'template_composition' ? { procedimento: id } : {}),
+      ...((PROCEDIMENTOS as readonly string[]).includes(id) ? { procedimento: id as Procedimento } : {}),
       ...(alvo?.startsWith('escopo:') ? { escopo: alvo.slice(7).trim() } : { template: alvo }),
       fonte: fonte?.replace(/^fonte:\s*/, ''),
       ...(demanda && demanda !== '—' ? { demandaId: demanda } : {}),
@@ -69,8 +69,8 @@ export async function readSkill(brainDir: string, id: SkillId): Promise<SkillDet
     });
   });
   return SkillDetailSchema.parse({
-    id, label: campos.label, skillFile: `skills/${id}.skill.md`,
-    ...(id !== 'template_composition' ? { procedimento: id } : {}),
+    id, label: campos.label, skillFile: skillPath(id),
+    ...((PROCEDIMENTOS as readonly string[]).includes(id) ? { procedimento: id as Procedimento } : {}),
     versao: Number(campos.versao), atualizadoEm: campos.atualizado_em, conteudo, rubrica, aprendizados,
   });
 }

@@ -34,6 +34,8 @@ atualizado_em: 2026-10-28
 
 ## 2. Diretrizes Visuais e Paleta
 
+> **Camadas:** esta paleta vale só quando a empresa **não** tem skill de marca (`skills/marcas/<rede>/`). Havendo marca, paleta, tipografia e logo vêm dela; aqui ficam as diretrizes clínicas da imagem.
+
 **Paleta predominante (arte do procedimento):**
 - Rosé suave `#C9777F` (acento) e nude `#F3D9D2` (superfícies)
 - Bordô discreto `#8C3B4A` (detalhes, selo)

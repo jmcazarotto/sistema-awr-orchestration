@@ -26,7 +26,7 @@ describe('IaRegistry', () => {
   });
   it('acumula chamadas, tokens e custo em dólar e real; Jev e Decisions sempre listados', async () => {
     const { ia, store, bus } = await setup();
-    expect(ia.uso().itens.map(i => i.provedor)).toEqual(['jev', 'openai_decisions']);
+    expect(ia.uso().itens.map(i => i.modelo)).toEqual(['jev-latest', 'gpt-6-luna-decisions', 'gpt-image-2', 'gpt-image-2.5-flare', 'gpt-image-2.5-sunburst']);
     await ia.registrar({ modelo: 'jev-latest', provedor: 'jev', tokensEntrada: 1000, usd: 0.000042 });
     await ia.registrar({ modelo: 'gpt-6-luna-decisions', tokensEntrada: 2_000_000 });
     await ia.registrar({ modelo: 'gpt-6.1-terra', tokensEntrada: 500, tokensSaida: 100 });

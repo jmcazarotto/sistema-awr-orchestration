@@ -94,8 +94,19 @@ export class EventBus {
     }
     await this.ack(message.id); this.log('warn', 'Devolução recusada: limite de hops excedido', message.demandaId); return true;
   }
+  pausados(): ActorId[] { return [...this.state.pausados]; }
+  /** Pausa/retoma um ator: pausado, nada novo sai da fila dele (as mensagens continuam pendentes e persistidas). */
+  async definirPausa(actor: ActorId, pausado: boolean): Promise<ActorId[]> {
+    await this.transaction(state => { state.pausados = pausado ? [...new Set([...state.pausados, actor])] : state.pausados.filter(id => id !== actor); });
+    this.emit({ type: 'agentes.pausa', payload: { pausados: this.pausados() } });
+    this.log('info', pausado ? `Agente pausado: ${actor} (a fila fica aguardando)` : `Agente retomado: ${actor}`, undefined, actor);
+    if (!pausado) await this.resume();
+    return this.pausados();
+  }
   private enqueue(message: InboxMessage): void {
     if (this.jobs.has(message.id)) return;
+    // Ator pausado: a mensagem fica pendente; retomar() reenfileira via resume().
+    if (this.state.pausados.includes(message.to)) return;
     const job = (this.tails.get(message.to) ?? Promise.resolve()).then(async () => {
       if (this.state.processed.includes(message.id)) return;
       const handler = this.handlers.get(message.to);

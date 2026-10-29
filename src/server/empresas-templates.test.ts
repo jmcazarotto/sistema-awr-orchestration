@@ -10,6 +10,48 @@ async function setup() {
 const json = (body: unknown) => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('API empresas/templates', () => {
+  it('persiste logo escolhida, borda e propriedades da sombra no template', async () => {
+    const f = await setup();
+    try {
+      const template = (await f.app.templates.list())[0]!;
+      const elementos = template.elementos.map(e => ({ ...e, ...(e.tipo === 'logo' ? { logoArquivo: '_marcas/royal_face/escolhida.png' } : {}), estilo: { ...e.estilo, borda: { cor: '#112233', largura: 12 }, sombra: true, sombraConfig: { cor: '#445566', opacidade: .6, x: -4, y: 20, desfoque: 18, expansao: 3 } } }));
+      const response = await f.api.request(`/api/templates/${template.id}`, { method: 'PUT', ...json({ nome: template.nome, fundo: template.fundo, elementos }) });
+      expect(response.status).toBe(200);
+      const saved = TemplateResponseSchema.parse(await (await f.api.request(`/api/templates/${template.id}`)).json()).template;
+      expect(saved.elementos).toEqual(elementos);
+      const invalid = elementos.map(e => ({ ...e, estilo: { ...e.estilo, sombraConfig: { ...e.estilo.sombraConfig, desfoque: -1 } } }));
+      expect((await f.api.request(`/api/templates/${template.id}`, { method: 'PUT', ...json({ nome: template.nome, fundo: template.fundo, elementos: invalid }) })).status).toBe(400);
+    } finally { await f.close(); }
+  });
+  it('acumula logos por fundo, preserva ao editar e salva principais', async () => {
+    const f = await setup();
+    try {
+      const original = (await f.app.empresas.get('royal_face'))!;
+      await f.app.empresas.upsert({ ...original, galeriaLogos: [] });
+      const upload = async (fundo: string, principal: boolean) => {
+        const form = new FormData();
+        form.append('arquivo', new File(['<svg/>'], 'mesmo-nome.svg', { type: 'image/svg+xml' }));
+        form.append('variante', fundo); form.append('principal', String(principal));
+        const response = await f.api.request('/api/empresas/royal_face/logo', { method: 'POST', body: form });
+        expect(response.status).toBe(200);
+        return EmpresaResponseSchema.parse(await response.json()).empresa;
+      };
+      const first = await upload('claro', false);
+      const second = await upload('claro', true);
+      const third = await upload('escuro', true);
+      expect(third.galeriaLogos).toHaveLength(3);
+      expect(new Set(third.galeriaLogos!.map(l => l.arquivo)).size).toBe(3);
+      expect(second.logos.claro).not.toBe(first.logos.claro);
+      for (const logo of third.galeriaLogos!) expect((await f.storage.read(logo.arquivo)).toString()).toBe('<svg/>');
+      const edited = await f.api.request('/api/empresas', { method: 'POST', ...json({ id: 'royal_face', nome: 'Nome atualizado' }) });
+      expect(EmpresaResponseSchema.parse(await edited.json()).empresa.galeriaLogos).toEqual(third.galeriaLogos);
+      const toggled = third.galeriaLogos!.map(l => ({ ...l, principal: l.arquivo === first.logos.claro }));
+      const saved = await f.api.request('/api/empresas', { method: 'POST', ...json({ ...third, galeriaLogos: toggled }) });
+      expect(EmpresaResponseSchema.parse(await saved.json()).empresa.logos.claro).toBe(first.logos.claro);
+      const removed = await f.api.request('/api/empresas', { method: 'POST', ...json({ ...third, galeriaLogos: [] }) });
+      expect(EmpresaResponseSchema.parse(await removed.json()).empresa.logos).toEqual({ claro: null, escuro: null });
+    } finally { await f.close(); }
+  });
   it('lista, consulta, cria empresa e filtra templates', async () => {
     const f = await setup();
     try {
@@ -72,12 +114,12 @@ describe('API ia (Configurações)', () => {
     const f = await setup();
     try {
       const modelos = (await (await f.api.request('/api/ia/modelos')).json()) as { modelos: Record<string, unknown> };
-      expect(modelos.modelos.imagem_monalisa).toEqual({ modelo: 'gpt-image-2', effort: 'medio' });
+      expect(modelos.modelos.imagem_monalisa).toEqual({ modelo: 'simulado', effort: null });
       const salvar = await f.api.request('/api/ia/modelos', { method: 'PUT', ...json({ ...modelos.modelos, aprendizado: { modelo: 'gpt-6.1-sol', effort: 'ultra' } }) });
       expect(salvar.status).toBe(200);
       expect((await f.api.request('/api/ia/modelos', { method: 'PUT', ...json({ ...modelos.modelos, triagem: { modelo: 'x', effort: null } }) })).status).toBe(400);
       const uso = (await (await f.api.request('/api/ia/uso')).json()) as { itens: unknown[]; total: { chamadas: number } };
-      expect(uso.itens).toHaveLength(2);
+      expect(uso.itens).toHaveLength(5);
       expect((await f.api.request('/api/ia/uso/zerar', { method: 'POST', ...json({}) })).status).toBe(200);
     } finally { await f.close(); }
   });

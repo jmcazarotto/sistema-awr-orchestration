@@ -116,7 +116,7 @@ describe('adapter HTTP', () => {
   });
   it('lista e lê skills com front-matter, rubrica e aprendizados; relê cada request', async () => {
     const lista = ListSkillsResponseSchema.parse(await (await f.app.request('/api/brain/skills')).json());
-    expect(lista.skills).toHaveLength(4);
+    expect(lista.skills).toHaveLength(5);
     expect(lista.skills.find(skill => skill.id === 'template_composition')).not.toHaveProperty('procedimento');
     const response = await f.app.request('/api/brain/skills/botox');
     expect(response.status).toBe(200);
@@ -127,14 +127,14 @@ describe('adapter HTTP', () => {
     expect(skill.aprendizados[1]).toMatchObject({ escopo: 'global' });
     expect(skill.aprendizados[1]).not.toHaveProperty('demandaId');
     expect(skill.aprendizados[1]).not.toHaveProperty('template');
-    await writeFile(join(f.brainDir, 'skills', 'botox.skill.md'), skill.conteudo.replace('versao: 1', 'versao: 2'));
+    await writeFile(join(f.brainDir, 'skills', 'procedimentos', 'botox.skill.md'), skill.conteudo.replace('versao: 1', 'versao: 2'));
     expect(GetSkillResponseSchema.parse(await (await f.app.request('/api/brain/skills/botox')).json()).skill.versao).toBe(2);
   });
   it.each(['invalida', '..%2f..%2fAGENTS.md', '%252e%252e', 'C:%5csegredo', '%2e%2e%5csegredo', 'botox.skill.md', '%00', '%E0%A4%A'])('rejeita skill fora da allowlist %s', async id => {
     expect((await f.app.request(`/api/brain/skills/${id}`)).status).toBe(404);
   });
   it('retorna 404 para skill suportada ausente', async () => {
-    await rm(join(f.brainDir, 'skills', 'botox.skill.md'));
+    await rm(join(f.brainDir, 'skills', 'procedimentos', 'botox.skill.md'));
     expect((await f.app.request('/api/brain/skills/botox')).status).toBe(404);
   });
   it('expõe somente config pública e health sem acionar motor', async () => {

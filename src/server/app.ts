@@ -1,4 +1,4 @@
-import { IaModelosResponseSchema, IaModelosSchema, IaUsoResponseSchema, EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
+import { ActorIdSchema, ListMarcasResponseSchema, LogoVarianteSchema, MarcaResponseSchema, IaModelosResponseSchema, IaModelosSchema, IaUsoResponseSchema, EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import {
@@ -55,7 +55,11 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     if (!(arquivo instanceof File) || !/\.(png|jpe?g|svg|webp)$/i.test(arquivo.name) || !mimes.includes(arquivo.type) || arquivo.size === 0 || arquivo.size > 2 * 1024 * 1024) {
       throw new ApiFailure(400, 'VALIDATION_ERROR', 'Logo deve ser PNG, JPG, SVG ou WebP de até 2 MB.');
     }
-    return c.json(EmpresaResponseSchema.parse({ empresa: await orchestrator.empresas.setLogo(c.req.param('id'), { nome: arquivo.name, dados: Buffer.from(await arquivo.arrayBuffer()) }) }));
+    const variante = LogoVarianteSchema.safeParse(form.get('variante') ?? 'principal');
+    if (!variante.success) throw new ApiFailure(400, 'VALIDATION_ERROR', 'variante deve ser principal, claro ou escuro.');
+    const principal = form.get('principal') ?? 'true';
+    if (principal !== 'true' && principal !== 'false') throw new ApiFailure(400, 'VALIDATION_ERROR', 'principal deve ser true ou false.');
+    return c.json(EmpresaResponseSchema.parse({ empresa: await orchestrator.empresas.setLogo(c.req.param('id'), { nome: arquivo.name, dados: Buffer.from(await arquivo.arrayBuffer()) }, variante.data, principal === 'true') }));
   });
   app.get('/api/templates', async c => {
     if (Object.values(c.req.queries()).some(values => values.length !== 1)) throw new ApiFailure(400, 'VALIDATION_ERROR', 'Query não aceita campos repetidos.');
@@ -67,6 +71,19 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     return c.json(TemplateResponseSchema.parse({ template }));
   });
   app.put('/api/templates/:id', async c => c.json(TemplateResponseSchema.parse({ template: await orchestrator.templates.save(c.req.param('id'), validate(SaveTemplateRequestSchema, await bodyJson(c))) })));
+  app.get('/api/agentes', c => c.json({ pausados: orchestrator.agentes.pausados() }));
+  app.post('/api/agentes/:id/:acao{pausar|retomar}', async c => {
+    const id = ActorIdSchema.safeParse(c.req.param('id'));
+    if (!id.success || !['van_gogh', 'monalisa', 'art_director'].includes(id.data)) throw new ApiFailure(400, 'VALIDATION_ERROR', 'Agente inválido.');
+    const acao = c.req.param('acao');
+    return c.json({ pausados: acao === 'pausar' ? await orchestrator.agentes.pausar(id.data) : await orchestrator.agentes.retomar(id.data) });
+  });
+  app.get('/api/brain/marcas', async c => c.json(ListMarcasResponseSchema.parse({ marcas: (await orchestrator.marcas.list()).map(({ conteudo: _c, visualSystem: _v, ...resumo }) => resumo) })));
+  app.get('/api/brain/marcas/:id', async c => {
+    const marca = await orchestrator.marcas.get(c.req.param('id'));
+    if (!marca) throw new ApiFailure(404, 'NOT_FOUND', 'Skill de marca não encontrada.');
+    return c.json(MarcaResponseSchema.parse({ marca }));
+  });
   app.get('/api/ia/modelos', c => c.json(IaModelosResponseSchema.parse({ modelos: orchestrator.ia.modelos() })));
   app.put('/api/ia/modelos', async c => c.json(IaModelosResponseSchema.parse({ modelos: await orchestrator.ia.salvarModelos(validate(IaModelosSchema, await bodyJson(c))) })));
   app.get('/api/ia/uso', c => c.json(IaUsoResponseSchema.parse(orchestrator.ia.uso())));
@@ -95,6 +112,12 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     validate(EmptyRequestSchema, await bodyJson(c, true));
     aguardaAwr(id);
     return c.json({ demanda: await orchestrator.resetHops(id) });
+  });
+  app.post('/api/demandas/:id/produzir', async c => {
+    const { id } = validate(DemandaParamsSchema, c.req.param());
+    validate(EmptyRequestSchema, await bodyJson(c, true));
+    demanda(id);
+    return c.json({ demanda: await orchestrator.produzir(id) });
   });
   app.get('/api/acervo', async c => c.json(await orchestrator.acervo.grid()));
   app.post('/api/acervo/fill', async c => {

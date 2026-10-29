@@ -1,3 +1,4 @@
+import { adicionarLogo, atualizarLogos } from '../../shared/logos';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { nanoid } from 'nanoid';
@@ -45,16 +46,17 @@ export class ClientesRegistry {
     const input = EmpresaInputSchema.parse(value);
     return this.mutate(entries => {
       const index = entries.findIndex(entry => entry.id === input.id);
-      const empresa = EmpresaSchema.parse({ ...input, logo: input.logo === undefined ? entries[index]?.logo : input.logo });
+      const empresa = atualizarLogos(EmpresaSchema.parse({ ...entries[index], ...input, logo: input.logo === undefined ? entries[index]?.logo : input.logo }));
       if (index < 0) entries.push(empresa); else entries[index] = empresa;
       return empresa;
     });
   }
-  setLogo(id: string, logo: string): Promise<Empresa> {
+  setLogo(id: string, logo: string, variante: 'principal' | 'claro' | 'escuro' = 'principal', principal = true): Promise<Empresa> {
     return this.mutate(entries => {
       const empresa = entries.find(entry => entry.id === id);
       if (!empresa) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
-      empresa.logo = logo;
+      if (variante === 'principal') empresa.logo = logo;
+      else Object.assign(empresa, adicionarLogo(empresa, logo, variante, principal));
       return empresa;
     });
   }

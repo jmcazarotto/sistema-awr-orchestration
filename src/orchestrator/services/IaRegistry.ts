@@ -11,9 +11,11 @@ export class IaRegistry {
 
   /** Defaults vêm do env (CLAUDE.md: modelos nunca hardcoded); a escolha salva na UI tem prioridade. */
   private padrao(situacao: IaSituacao): IaModeloConfig {
+    // Imagem real só por padrão quando IMAGE_ENGINE_MODE=openai; Monalisa segue simulada até ser liberada nas Configurações.
+    const imagem = this.config.IMAGE_ENGINE_MODE === 'openai' ? this.config.IMAGE_MODEL : 'simulado';
     const env: Record<IaSituacao, string> = {
       triagem: this.config.JEV_MODEL, rubrica: this.config.REVIEW_MODEL, feedback: this.config.FEEDBACK_MODEL,
-      aprendizado: this.config.FEEDBACK_MODEL, imagem_van_gogh: this.config.IMAGE_MODEL, imagem_monalisa: this.config.IMAGE_MODEL,
+      aprendizado: this.config.FEEDBACK_MODEL, imagem_van_gogh: imagem, imagem_monalisa: 'simulado',
     };
     const permitido = IA_SITUACAO_INFO[situacao].modelos;
     const modelo = permitido.includes(env[situacao]) ? env[situacao] : permitido[0]!;
@@ -51,14 +53,15 @@ export class IaRegistry {
   }
   uso(): IaUsoResponse {
     const { uso, usoDesde } = this.bus.snapshot().ia; const cotacao = this.config.USD_BRL;
-    // Jev e Decisions API aparecem sempre (mesmo zerados); demais modelos só depois de usados.
-    const fixos = IA_CATALOGO.filter(m => m.provedor !== 'openai').map(m => `${m.provedor}:${m.id}`);
+    // Jev, Decisions API e os modelos de imagem aparecem sempre (mesmo zerados); demais modelos só depois de usados.
+    const fixos = IA_CATALOGO.filter(m => m.provedor !== 'local' && (m.provedor !== 'openai' || m.tipo === 'imagem')).map(m => `${m.provedor}:${m.id}`);
     const chaves = [...new Set([...fixos, ...Object.keys(uso)])];
     const itens = chaves.map(chave => {
       const [provedor, ...resto] = chave.split(':'); const modelo = resto.join(':'); const registro = uso[chave];
-      const precificado = (iaModelo(modelo)?.precoEntrada ?? null) !== null || provedor === 'jev';
+      const catalogo = iaModelo(modelo);
+      const precificado = (catalogo?.precoEntrada ?? null) !== null || provedor === 'jev';
       const usd = registro?.usd ?? 0;
-      return { provedor: provedor as IaProvedor, modelo, chamadas: registro?.chamadas ?? 0, tokensEntrada: registro?.tokensEntrada ?? 0, tokensSaida: registro?.tokensSaida ?? 0, usd, brl: usd * cotacao, precificado };
+      return { provedor: provedor as IaProvedor, modelo, tipo: catalogo?.tipo ?? 'texto', chamadas: registro?.chamadas ?? 0, tokensEntrada: registro?.tokensEntrada ?? 0, tokensSaida: registro?.tokensSaida ?? 0, usd, brl: usd * cotacao, precificado };
     });
     const total = itens.reduce((acc, item) => ({ chamadas: acc.chamadas + item.chamadas, usd: acc.usd + item.usd, brl: acc.brl + item.brl }), { chamadas: 0, usd: 0, brl: 0 });
     return IaUsoResponseSchema.parse({ desde: usoDesde, cotacaoUsdBrl: cotacao, itens, total });

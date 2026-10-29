@@ -1,9 +1,12 @@
-import { readFile, writeFile, rename } from 'node:fs/promises';
+import { readFile, readdir, writeFile, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
-import { ActorIdSchema, DemandaIdSchema, LearningSchema, PROCEDIMENTOS, ProcedimentoSchema, SkillDetailSchema, SkillIdSchema, TipoTemplateSchema, TIPOS_TEMPLATE } from '../../shared/types';
-import type { ActorId, Learning, Procedimento, RubricaItem, SkillDetail, SkillId, TipoTemplate } from '../../shared/types';
+import { ActorIdSchema, DemandaIdSchema, LearningSchema, PROCEDIMENTOS, ProcedimentoSchema, SkillDetailSchema, SkillIdSchema, TipoTemplateSchema, TIPOS_TEMPLATE, skillPath } from '../../shared/types';
+import { ReferenciaMarcaSchema } from '../../shared/types';
+import type { ActorId, Empresa, Learning, MarcaSkill, Procedimento, RubricaItem, SkillDetail, SkillId, TipoTemplate } from '../../shared/types';
+import { ClientesRegistry } from './ClientesRegistry';
+import { matchEmpresa } from './EmpresaMatcher';
 import type { Clock } from '../core/interfaces';
 import type { EventBus } from '../core/EventBus';
 import type { AiClient } from '../services/AiClient';
@@ -81,6 +84,18 @@ export function parseLearnings(text: string, procedimento?: Procedimento): Learn
 }
 export function clientSlug(name: string): string { return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, ''); }
 export interface LoadedSkill extends SkillDetail { templates: Partial<Record<TipoTemplate, string>>; promptBase: string; disclaimer: string; palette: string[] }
+/** Skill de marca carregada: identidade (§1–§4), rubrica M (§5), referências do índice e aprendizados. */
+export interface LoadedMarca extends MarcaSkill { promptMarca: string; composicoes: Record<string, string>; aprendizados: Learning[] }
+const lerOpcional = async (path: string): Promise<string | null> => { try { return await readFile(path, 'utf8'); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null; throw error; } };
+/** Tabela "| id | arquivo | procedimento | composicao | oferta | usar_copy | notas |" da seção "## Índice". */
+export function parseReferencias(text: string, raiz: string): MarcaSkill['referencias'] {
+  const indice = sections(text).get('Índice') ?? '';
+  return indice.split(/\r?\n/).filter(line => /^\|\s*[a-z0-9_]+\s*\|/.test(line) && !/^\|\s*id\s*\|/.test(line)).flatMap(line => {
+    const [id, arquivo, procedimento, composicao, oferta, usarCopy, notas] = line.split('|').slice(1, -1).map(cell => cell.trim());
+    const parsed = ReferenciaMarcaSchema.safeParse({ id, arquivo: `${raiz.replace(/\/+$/, '')}/${arquivo}`, procedimento, composicao, oferta: oferta === 'sim', usarCopy: usarCopy !== 'nao', notas: notas ?? '' });
+    return parsed.success ? [parsed.data] : [];
+  });
+}
 export interface AppendLearningInput {
   procedimento?: Procedimento; template?: TipoTemplate; escopo?: Learning['escopo']; regra: string;
   motivoOriginal: string; demandaId: string; fonte?: Learning['fonte'];
@@ -96,28 +111,60 @@ export class BrainLoader {
   }
   async loadSkill(id: SkillId): Promise<LoadedSkill> {
     SkillIdSchema.parse(id);
-    const skillFile = `skills/${id}.skill.md`;
+    const skillFile = skillPath(id);
     const conteudo = await readFile(join(this.directory, skillFile), 'utf8');
     const metadata = parseFrontMatter(conteudo); const templateSection = numberedSection(conteudo, 3);
     const headings = [...templateSection.matchAll(/^### (\w+)\r?$/gm)]; const templates: LoadedSkill['templates'] = {};
     headings.forEach((heading, index) => { const key = TIPOS_TEMPLATE.find(type => type === heading[1]); if (key) templates[key] = templateSection.slice(heading.index! + heading[0].length, headings[index + 1]?.index ?? templateSection.length).trim(); });
-    const rubrica: RubricaItem[] = [...numberedSection(conteudo, 5).matchAll(/^- \[(R\d+)\]\[(critico|normal)\] (.+\?)\s*$/gm)].map(match => ({ id: match[1]!, severidade: match[2] === 'critico' ? 'critico' : 'normal', pergunta: match[3]! }));
+    const rubrica: RubricaItem[] = [...numberedSection(conteudo, 5).matchAll(/^- \[([RMT]\d+)\]\[(critico|normal)\] (.+\?)\s*$/gm)].map(match => ({ id: match[1]!, severidade: match[2] === 'critico' ? 'critico' : 'normal', pergunta: match[3]! }));
     const procedimento = PROCEDIMENTOS.find(proc => proc === id);
     const detail = SkillDetailSchema.parse({ id, skillFile, label: metadata.label, versao: metadata.versao, atualizadoEm: String(metadata.atualizado_em), procedimento, conteudo, rubrica, aprendizados: parseLearnings(conteudo, procedimento) });
     const disclaimer = /`(Imagem ilustrativa\.[^`]+)`/.exec(numberedSection(conteudo, 1))?.[1] ?? 'Imagem ilustrativa. Resultados podem variar de pessoa para pessoa. Procedimento realizado por profissional habilitado.';
     return { ...detail, templates, disclaimer, palette: [...numberedSection(conteudo, 2).matchAll(/#[0-9a-fA-F]{6}/g)].map(match => match[0]), promptBase: /```prompt\r?\n([\s\S]*?)```/.exec(numberedSection(conteudo, 4))?.[1]?.trim() ?? '' };
   }
+  async loadMarca(id: string): Promise<LoadedMarca | null> {
+    if (!/^[a-z0-9_]+$/.test(id)) return null;
+    const base = join(this.directory, 'skills', 'marcas', id);
+    const conteudo = await lerOpcional(join(base, 'marca.skill.md'));
+    if (!conteudo) return null;
+    const [visualSystem, indice] = await Promise.all([lerOpcional(join(base, 'visual-system.md')), lerOpcional(join(base, 'referencias.md'))]);
+    const meta = parseFrontMatter(conteudo); const raiz = String(parseFrontMatter(indice ?? '').raiz ?? `_marcas/${id}/referencias`);
+    const secao3 = numberedSection(conteudo, 3); const headings = [...secao3.matchAll(/^### (\w+)\r?$/gm)];
+    const composicoes = Object.fromEntries(headings.map((heading, index) => [heading[1]!, secao3.slice(heading.index! + heading[0].length, headings[index + 1]?.index ?? secao3.length).trim()]));
+    const rubrica: RubricaItem[] = [...numberedSection(conteudo, 5).matchAll(/^- \[(M\d+)\]\[(critico|normal)\] (.+\?)\s*$/gm)].map(match => ({ id: match[1]!, severidade: match[2] === 'critico' ? 'critico' : 'normal', pergunta: match[3]! }));
+    return { id, label: String(meta.label ?? id), versao: Number(meta.versao ?? 1), atualizadoEm: String(meta.atualizado_em ?? ''), empresas: Array.isArray(meta.empresas) ? meta.empresas.map(String) : [id],
+      skillFile: `skills/marcas/${id}/marca.skill.md`, conteudo, visualSystem: visualSystem ?? '', rubrica, referencias: indice ? parseReferencias(indice, raiz) : [],
+      promptMarca: /```prompt\r?\n([\s\S]*?)```/.exec(numberedSection(conteudo, 4))?.[1]?.trim() ?? '', composicoes, aprendizados: parseLearnings(conteudo) };
+  }
+  async listMarcas(): Promise<LoadedMarca[]> {
+    let pastas: string[];
+    try { pastas = await readdir(join(this.directory, 'skills', 'marcas')); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return []; throw error; }
+    return (await Promise.all(pastas.sort().map(pasta => this.loadMarca(pasta)))).filter((marca): marca is LoadedMarca => marca !== null);
+  }
+  /** Empresa (rede) citada na demanda e a skill de marca dela, se existir. Determinístico (cadastro + matcher). */
+  async marcaDaDemanda(texto: string): Promise<{ empresa: Empresa | null; marca: LoadedMarca | null }> {
+    const empresas = await new ClientesRegistry(this.directory).list();
+    const match = matchEmpresa(texto, empresas);
+    const empresa = match ? empresas.find(value => value.id === match.rede.id) ?? null : null;
+    return { empresa, marca: empresa ? await this.loadMarca(empresa.id) : null };
+  }
   async loadMemories(): Promise<Learning[]> {
     const texts = await Promise.all(['global_learnings', 'client_preferences'].map(name => readFile(join(this.directory, 'memory', `${name}.md`), 'utf8')));
     return texts.flatMap(text => parseLearnings(text));
   }
-  async context(procedimento: Procedimento, template: TipoTemplate, clinicaNome?: string): Promise<{ skill: LoadedSkill; composition: LoadedSkill; aprendizados: Learning[]; rubrica: RubricaItem[] }> {
-    const [skill, composition, memories] = await Promise.all([this.loadSkill(procedimento), this.loadSkill('template_composition'), this.loadMemories()]);
+  /**
+   * Contexto de produção/revisão. Com `arteFinal` (Van Gogh, arte completa por IA) a rubrica soma
+   * procedimento (R) + marca (M) + técnica arte_final_ia (T); sem ela, procedimento + composição de template.
+   */
+  async context(procedimento: Procedimento, template: TipoTemplate, clinicaNome?: string, arteFinal?: { marcaId: string | null }): Promise<{ skill: LoadedSkill; composition: LoadedSkill; aprendizados: Learning[]; rubrica: RubricaItem[]; marca: LoadedMarca | null; tecnica: LoadedSkill | null }> {
+    const [skill, composition, memories, tecnica, marca] = await Promise.all([this.loadSkill(procedimento), this.loadSkill('template_composition'), this.loadMemories(),
+      arteFinal ? this.loadSkill('arte_final_ia') : Promise.resolve(null), arteFinal?.marcaId ? this.loadMarca(arteFinal.marcaId) : Promise.resolve(null)]);
     const aprendizados = [...skill.aprendizados, ...memories].filter(learning => learning.status === 'ativo' &&
       (learning.template === template || learning.escopo === 'global' || learning.escopo === `procedimento:${procedimento}` || learning.escopo === `template:${template}` || (clinicaNome && learning.escopo === `cliente:${clientSlug(clinicaNome)}`)));
     // Os Rnn da composição colidem com os do procedimento no contrato. A composição é
     // fornecida integralmente ao revisor, mantendo os IDs públicos do procedimento.
-    return { skill, composition, aprendizados, rubrica: [...skill.rubrica, ...aprendizados.map(learning => ({ id: learning.id, severidade: learning.severidade ?? 'critico' as const, pergunta: `${learning.regra.replace(/[.?]$/, '')}?` }))] };
+    const extras = [...(marca?.rubrica ?? []), ...(tecnica?.rubrica ?? [])];
+    return { skill, composition, aprendizados, marca, tecnica, rubrica: [...skill.rubrica, ...extras, ...aprendizados.map(learning => ({ id: learning.id, severidade: learning.severidade ?? 'critico' as const, pergunta: `${learning.regra.replace(/[.?]$/, '')}?` }))] };
   }
   async distillLearning(motivo: string, template: TipoTemplate): Promise<string> {
     if (this.ai) return (await this.ai.json(this.ai.alvo('aprendizado', this.ai.config.FEEDBACK_MODEL), z.object({ regra: z.string().min(12) }), 'Transforme o motivo humano em uma regra imperativa, generalizável e acionável em PT-BR. Nunca inclua informações específicas da demanda.', JSON.stringify({ motivo, template }))).regra;
@@ -136,7 +183,7 @@ export class BrainLoader {
     const work = this.appendQueue.then(async () => {
       const prefix = input.template ? 'L' : input.escopo?.startsWith('cliente:') ? 'C' : 'G';
       if (input.template && !input.procedimento) throw new Error('Aprendizado de template exige procedimento');
-      const skillFile = input.template ? `skills/${input.procedimento}.skill.md` : `memory/${prefix === 'C' ? 'client_preferences' : 'global_learnings'}.md`;
+      const skillFile = input.template ? skillPath(input.procedimento!) : `memory/${prefix === 'C' ? 'client_preferences' : 'global_learnings'}.md`;
       const path = join(this.directory, skillFile); const original = await readFile(path, 'utf8');
       if (!/^<!-- APPEND-ONLY:.*-->\r?$/m.test(original)) throw new Error('Marcador APPEND-ONLY ausente');
       const numbers = [...original.matchAll(new RegExp(`^### ${prefix}(\\d+) ·`, 'gm'))].map(match => Number(match[1]));

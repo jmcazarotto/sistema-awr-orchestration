@@ -21,7 +21,9 @@ export class VisionReviewer {
   async review(demanda: Demanda, path: string, versao: number): Promise<ReviewResult> {
     if (!demanda.classificacao) throw new Error('Demanda sem classificação');
     const { procedimento, tipoTemplate } = demanda.classificacao;
-    const context = await this.brain.context(procedimento, tipoTemplate, demanda.clinicaNome);
+    const meta = ArteMetaSchema.parse(JSON.parse((await this.storage.read(metaPath(path))).toString('utf8')));
+    // Arte final por IA (Van Gogh): rubrica R (procedimento) + M (marca) + T (técnica arte_final_ia).
+    const context = await this.brain.context(procedimento, tipoTemplate, demanda.clinicaNome, meta.arteFinal ? { marcaId: meta.arteFinal.marca } : undefined);
     const photo = await this.storage.read(path);
     let itens: ReviewItem[];
     if (this.config.AI_MODE === 'openai') {
@@ -30,17 +32,17 @@ export class VisionReviewer {
       const validatedSchema = ReviewResultSchema.superRefine((result, ctx) => {
         if (result.itens.length !== context.rubrica.length || new Set(result.itens.map(item => item.id)).size !== context.rubrica.length || context.rubrica.some(item => !result.itens.some(value => value.id === item.id && value.severidade === item.severidade))) ctx.addIssue({ code: 'custom', message: 'Responder exatamente uma vez a cada item da rubrica' });
       });
-      const result = await this.ai.json(this.ai.alvo('rubrica', this.config.REVIEW_MODEL), validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, composicao: context.composition.conteudo, skill: context.skill.conteudo, template: tipoTemplate, instrucoes: 'Avalie cada item com sim/nao e evidência visual. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), photo);
+      const result = await this.ai.json(this.ai.alvo('rubrica', this.config.REVIEW_MODEL), validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, ...(meta.arteFinal ? { marca: context.marca?.conteudo ?? null, tecnica: context.tecnica?.conteudo, textosExatosDoBriefing: meta.arteFinal.textosExatos, disclaimer: meta.textos.disclaimer } : { composicao: context.composition.conteudo }), skill: context.skill.conteudo, template: tipoTemplate, instrucoes: 'Avalie cada item com sim/nao e evidência visual. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), photo);
       itens = result.itens;
     } else {
-      const meta = ArteMetaSchema.parse(JSON.parse((await this.storage.read(metaPath(path))).toString('utf8')));
       const metadata = await sharp(photo).metadata();
       itens = context.rubrica.map(item => ({ id: item.id, severidade: item.severidade, resposta: 'sim', evidencia: 'Composição mock gerada por SVG com geometria e textos da Skill; fotografia ilustrativa.' }));
       const fail = (id: string, evidencia: string) => { const item = itens.find(value => value.id === id); if (item) { item.resposta = 'nao'; item.evidencia = evidencia; } };
       if (meta.textos.disclaimer !== context.skill.disclaimer) fail('R01', 'Disclaimer obrigatório ausente ou alterado.');
       if (metadata.width !== 1080 || metadata.height !== (this.config.IMAGE_SIZE === '1080x1920' ? 1920 : 1350)) fail('R06', 'Dimensão da arte incompatível com o template.');
       const rng = this.options.rng ?? seededRng(`${this.options.seed ?? ''}:${demanda.id}:${versao}`);
-      if (rng() < this.config.MOCK_REJECT_RATE) {
+      // Reprovação simulada nunca recai sobre imagem paga (evita regerar na OpenAI só para testar o loop).
+      if (meta.engine !== 'openai' && rng() < this.config.MOCK_REJECT_RATE) {
         const candidates = context.rubrica.filter(item => item.id !== 'R01' && !item.id.startsWith('G'));
         const critical = candidates.filter(item => item.severidade === 'critico');
         const first = critical[Math.min(critical.length - 1, Math.floor(rng() * critical.length))] ?? candidates[0];

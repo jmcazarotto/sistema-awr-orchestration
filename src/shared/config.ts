@@ -27,6 +27,7 @@ export const ConfigEnvSchema = OrchestratorConfigSchema.extend({
     if (value === 'false') return false;
     return value;
   }, OrchestratorConfigSchema.shape.ACERVO_AUTOFILL),
+  PRODUCAO_MANUAL_VAN_GOGH: z.preprocess(value => value === 'true' ? true : value === 'false' ? false : value, OrchestratorConfigSchema.shape.PRODUCAO_MANUAL_VAN_GOGH),
 });
 
 /** Puro: o chamador fornece env; credenciais/variáveis alheias são descartadas pelo Zod. */

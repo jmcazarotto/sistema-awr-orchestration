@@ -164,7 +164,7 @@ describe('TriagemService e integração', () => {
     try {
       const service = new TriagemService(f.config, f.bus, new JevClient(f.config, 'secret', { fetch: fetcher }));
       const input = { briefing: 'Botox para Royal Face', procedimento: 'fios_sustentacao' as const, tipoTemplate: 'banco_imagem_2' as const, clinicaNome: 'Explícita' };
-      expect(await new FastClassifier(f.config, undefined, service).classify(input)).toMatchObject({ procedimento: 'fios_sustentacao', tipoTemplate: 'banco_imagem_2', confianca: 1, skillFile: 'skills/fios_sustentacao.skill.md' });
+      expect(await new FastClassifier(f.config, undefined, service).classify(input)).toMatchObject({ procedimento: 'fios_sustentacao', tipoTemplate: 'banco_imagem_2', confianca: 1, skillFile: 'skills/procedimentos/fios_sustentacao.skill.md' });
       expect(input.clinicaNome).toBe('Explícita');
       const demanda = await f.app.submitDemand({ briefing: 'Botox para Royal Face' });
       expect(demanda).toMatchObject({ clinicaNome: 'Royal Face', classificacao: { procedimento: 'botox', confianca: 0.8 } });
