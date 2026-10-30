@@ -1,5 +1,7 @@
-import { ActorIdSchema, ListMarcasResponseSchema, LogoVarianteSchema, MarcaResponseSchema, IaModelosResponseSchema, IaModelosSchema, IaUsoResponseSchema, EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
+import { ActorIdSchema, ListMarcasResponseSchema, LogoVarianteSchema, MarcaResponseSchema, IaModelosResponseSchema, IaModelosSchema, IaUsoResponseSchema, EmpresaInputSchema, EmpresaResponseSchema, ListEmpresasResponseSchema, ReferenciaCategoriaSchema, ReferenciasResponseSchema, TemplatesQuerySchema, ListTemplatesResponseSchema, TemplateResponseSchema, SaveTemplateRequestSchema } from '../shared/types';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
+import { PapelAnexoSchema, UploadAnexoResponseSchema } from '../shared/types';
 import { cors } from 'hono/cors';
 import {
   CreateDemandaRequestSchema, DemandaParamsSchema, EmptyRequestSchema, EventsHeadersSchema,
@@ -46,6 +48,19 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
     return c.json(EmpresaResponseSchema.parse({ empresa }));
   });
   app.post('/api/empresas', async c => c.json(EmpresaResponseSchema.parse({ empresa: await orchestrator.empresas.upsert(validate(EmpresaInputSchema, await bodyJson(c))) })));
+  app.get('/api/empresas/:id/referencias', async c => c.json(ReferenciasResponseSchema.parse({ referencias: await orchestrator.empresas.referencias(c.req.param('id')) })));
+  app.put('/api/empresas/:id/referencias/:ref', async c => {
+    const categoria = validate(ReferenciaCategoriaSchema, await bodyJson(c));
+    return c.json(ReferenciasResponseSchema.parse({ referencias: await orchestrator.empresas.categorizarReferencia(c.req.param('id'), c.req.param('ref'), categoria.procedimento, categoria.composicao) }));
+  });
+  app.post('/api/empresas/:id/referencias', async c => {
+    let form: FormData;
+    try { form = await c.req.raw.formData(); } catch { throw new ApiFailure(400, 'VALIDATION_ERROR', 'Envie multipart/form-data.'); }
+    const arquivo = form.get('arquivo');
+    if (!(arquivo instanceof File) || !/\.(png|jpe?g|webp)$/i.test(arquivo.name) || !['image/png', 'image/jpeg', 'image/webp'].includes(arquivo.type) || !arquivo.size || arquivo.size > 10 * 1024 * 1024) throw new ApiFailure(400, 'VALIDATION_ERROR', 'Referência deve ser PNG, JPG ou WebP de até 10 MB.');
+    const categoria = validate(ReferenciaCategoriaSchema, { procedimento: form.get('procedimento'), composicao: form.get('composicao') });
+    return c.json(ReferenciasResponseSchema.parse({ referencias: await orchestrator.empresas.adicionarReferencia(c.req.param('id'), { nome: arquivo.name, dados: Buffer.from(await arquivo.arrayBuffer()) }, categoria.procedimento, categoria.composicao) }));
+  });
   app.post('/api/empresas/:id/logo', async c => {
     let form: FormData;
     try { form = await c.req.raw.formData(); }
@@ -89,10 +104,18 @@ export function createApp(deps: { orchestrator: Orchestrator; config: Orchestrat
   app.get('/api/ia/uso', c => c.json(IaUsoResponseSchema.parse(orchestrator.ia.uso())));
   app.post('/api/ia/uso/zerar', async c => c.json(IaUsoResponseSchema.parse(await orchestrator.ia.zerarUso())));
   app.post('/api/triagem', async c => {
-    const { texto } = validate(TriagemRequestSchema, await bodyJson(c));
-    return c.json(TriagemResponseSchema.parse({ triagem: await orchestrator.triar(texto) }));
+    const { texto, anexos } = validate(TriagemRequestSchema, await bodyJson(c));
+    return c.json(TriagemResponseSchema.parse({ triagem: await orchestrator.triar(texto, anexos) }));
   });
   app.post('/api/demandas', async c => c.json({ demanda: await orchestrator.submitDemand(validate(CreateDemandaRequestSchema, await bodyJson(c))) }, 201));
+  app.post('/api/demandas/anexos', bodyLimit({ maxSize: 11 * 1024 * 1024, onError: c => c.json({ error: { code: 'VALIDATION_ERROR', message: 'Cada imagem deve ter até 10 MB.' } }, 413) }), async c => {
+    let form: FormData;
+    try { form = await c.req.raw.formData(); } catch { throw new ApiFailure(400, 'VALIDATION_ERROR', 'Envie multipart/form-data com arquivo e papel.'); }
+    const arquivo = form.get('arquivo');
+    if (!(arquivo instanceof File)) throw new ApiFailure(400, 'VALIDATION_ERROR', 'Envie o campo arquivo.');
+    const papel = validate(PapelAnexoSchema, form.get('papel'));
+    return c.json(UploadAnexoResponseSchema.parse({ anexo: await orchestrator.uploadAnexo({ nome: arquivo.name, dados: Buffer.from(await arquivo.arrayBuffer()) }, papel) }), 201);
+  });
   app.get('/api/demandas', c => c.json({ demandas: orchestrator.listDemandas() }));
   app.get('/api/demandas/:id', c => {
     const { id } = validate(DemandaParamsSchema, c.req.param());

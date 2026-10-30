@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { nanoid } from 'nanoid';
 import { z } from 'zod';
 import { EmpresaSchema, EmpresaInputSchema } from '../../shared/types';
-import type { Empresa, EmpresaInput, UnidadeEmpresa } from '../../shared/types';
+import type { Empresa, EmpresaInput, ReferenciaMarca, UnidadeEmpresa } from '../../shared/types';
 import { OrchestratorError } from '../core/errors';
 
 const ClientesSchema = z.array(EmpresaSchema).refine(clientes => {
@@ -57,6 +57,14 @@ export class ClientesRegistry {
       if (!empresa) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
       if (variante === 'principal') empresa.logo = logo;
       else Object.assign(empresa, adicionarLogo(empresa, logo, variante, principal));
+      return empresa;
+    });
+  }
+  atualizarReferencias(id: string, legadas: ReferenciaMarca[], change: (referencias: ReferenciaMarca[]) => ReferenciaMarca[]): Promise<Empresa> {
+    return this.mutate(entries => {
+      const empresa = entries.find(entry => entry.id === id);
+      if (!empresa) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
+      empresa.referencias = change(empresa.referencias ?? legadas);
       return empresa;
     });
   }

@@ -12,7 +12,7 @@ describe('POST /api/triagem', () => {
     const response = await f.app.request('/api/triagem', post({ texto: '  Antes e depois de botox  ' }));
     expect(response.status).toBe(200);
     expect(TriagemResponseSchema.parse(await response.json()).triagem.procedimento).toBe('botox');
-    expect(f.orchestrator.triar).toHaveBeenCalledWith('Antes e depois de botox');
+    expect(f.orchestrator.triar).toHaveBeenCalledWith('Antes e depois de botox', undefined);
     expect(f.orchestrator.submitDemand).not.toHaveBeenCalled();
   });
   it.each([{}, null, { texto: 'ab' }, { texto: ' ' }, { texto: 'x'.repeat(4001) }, { texto: 'botox', extra: 1 }])('rejeita body %j', async body => {
@@ -26,6 +26,6 @@ describe('POST /api/triagem', () => {
     f.orchestrator.triar.mockRejectedValueOnce(new OrchestratorError('UPSTREAM_ERROR', 'private-key', 502));
     const response = await f.app.request('/api/triagem', post({ texto: 'antes e depois' }));
     expect(response.status).toBe(502);
-    expect(await response.json()).toEqual({ error: { code: 'UPSTREAM_ERROR', message: 'Falha no classificador Jev.' } });
+    expect(await response.json()).toEqual({ error: { code: 'UPSTREAM_ERROR', message: 'Falha no classificador de IA.' } });
   });
 });

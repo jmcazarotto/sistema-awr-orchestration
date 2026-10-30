@@ -13,8 +13,12 @@ export class IaRegistry {
   private padrao(situacao: IaSituacao): IaModeloConfig {
     // Imagem real só por padrão quando IMAGE_ENGINE_MODE=openai; Monalisa segue simulada até ser liberada nas Configurações.
     const imagem = this.config.IMAGE_ENGINE_MODE === 'openai' ? this.config.IMAGE_MODEL : 'simulado';
+    // Como a imagem: Jev segue o provider do .env; Luna real por padrão só com AI_MODE=openai ou escolhida nas Configurações.
+    const jev = this.config.CLASSIFIER_PROVIDER === 'jev'; const iaReal = this.config.AI_MODE === 'openai';
     const env: Record<IaSituacao, string> = {
-      triagem: this.config.JEV_MODEL, rubrica: this.config.REVIEW_MODEL, feedback: this.config.FEEDBACK_MODEL,
+      triagem: jev ? 'jev-latest' : iaReal ? this.config.CLASSIFIER_MODEL : 'simulado',
+      leitura_briefing: jev || iaReal ? this.config.BRIEFING_MODEL : 'simulado',
+      rubrica: this.config.REVIEW_MODEL, feedback: this.config.FEEDBACK_MODEL,
       aprendizado: this.config.FEEDBACK_MODEL, imagem_van_gogh: imagem, imagem_monalisa: 'simulado',
     };
     const permitido = IA_SITUACAO_INFO[situacao].modelos;
@@ -24,7 +28,8 @@ export class IaRegistry {
   }
   modelos(): IaModelos {
     const salvos = this.bus.snapshot().ia.modelos;
-    return Object.fromEntries(IA_SITUACOES.map(s => [s, salvos[s] ?? this.padrao(s)])) as IaModelos;
+    // Escolha salva que saiu da lista (ex.: Decisions onde é preciso escrever texto) volta ao padrão.
+    return Object.fromEntries(IA_SITUACOES.map(s => { const salvo = salvos[s]; return [s, salvo && IA_SITUACAO_INFO[s].modelos.includes(salvo.modelo) ? salvo : this.padrao(s)]; })) as IaModelos;
   }
   async salvarModelos(input: IaModelos): Promise<IaModelos> {
     const modelos = IaModelosSchema.parse(input);

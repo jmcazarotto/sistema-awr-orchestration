@@ -2,8 +2,9 @@ import { LogoDropzone } from '../components/LogoDropzone';
 import { galeriaLogos } from '../../shared/logos';
 import { useEffect, useId, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { PROCEDIMENTOS, PROCEDIMENTO_LABELS } from '../../shared/types';
-import type { Empresa, EmpresaInput } from '../../shared/types';
+import { COMPOSICOES, PROCEDIMENTOS, PROCEDIMENTO_LABELS } from '../../shared/types';
+import type { Empresa, EmpresaInput, Procedimento, ReferenciaMarca } from '../../shared/types';
+import { imageUrl } from '../transport/client';
 import { useRuntime } from '../state/context';
 import { slugify, useLoad } from '../state/useLoad';
 import { Badge, Empty, Icon, PageHeading, errorMessage, useToast } from '../components/ui';
@@ -84,11 +85,45 @@ function EmpresaCard({ empresa, onEdit }: { empresa: Empresa; onEdit: () => void
   </article>;
 }
 
+const composicaoLabel = (value: string) => ({ modelo_destaque: 'Modelo em destaque', close_procedimento: 'Close do procedimento', informativa_clean: 'Informativa', antes_depois_editorial: 'Antes e depois', corporal: 'Corporal' } as Record<string, string>)[value] ?? value;
+
+function ReferenciasEmpresa({ empresa }: { empresa: Empresa }) {
+  const { api } = useRuntime(); const toast = useToast();
+  const { data, error, loading, reload, setData } = useLoad(() => api.referenciasEmpresa(empresa.id).then(r => r.referencias), [api, empresa.id]);
+  const [procedimento, setProcedimento] = useState<Procedimento>('botox');
+  const [composicao, setComposicao] = useState('modelo_destaque');
+  const [filtro, setFiltro] = useState('todos');
+  const [busy, setBusy] = useState(false);
+  const input = useRef<HTMLInputElement>(null);
+  async function enviar(files: File[]) {
+    if (!files.length || busy) return;
+    setBusy(true); let enviados = 0;
+    try {
+      for (const file of files) { const result = await api.uploadReferencia(empresa.id, file, procedimento, composicao); setData(result.referencias); enviados++; }
+      toast(`${enviados} referência(s) adicionada(s).`);
+    } catch (e) { toast(`Enviadas: ${enviados}. ${errorMessage(e)}`, true); }
+    finally { setBusy(false); }
+  }
+  async function categorizar(ref: ReferenciaMarca, proc: string, comp: string) {
+    if (!(PROCEDIMENTOS as readonly string[]).includes(proc)) return;
+    setBusy(true);
+    try { setData((await api.categorizarReferencia(empresa.id, ref.id, proc as Procedimento, comp)).referencias); toast('Referência atualizada.'); }
+    catch (e) { toast(errorMessage(e), true); } finally { setBusy(false); }
+  }
+  const refs = data?.filter(ref => filtro === 'todos' || ref.procedimento === filtro) ?? [];
+  return <section className="card empresa-section"><div className="empresa-section-heading"><span className="stat-icon"><Icon name="image" /></span><div><h2>Referências aprovadas</h2><p>Organize imagens por procedimento para orientar a criação.</p></div></div>
+    <div className="referencia-upload"><label>Procedimento para novos arquivos<select value={procedimento} onChange={e => setProcedimento(e.target.value as Procedimento)} disabled={busy}>{PROCEDIMENTOS.map(p => <option key={p} value={p}>{PROCEDIMENTO_LABELS[p]}</option>)}</select></label><label>Tipo de composição<select value={composicao} onChange={e => setComposicao(e.target.value)} disabled={busy}>{COMPOSICOES.map(c => <option key={c} value={c}>{composicaoLabel(c)}</option>)}</select></label><input ref={input} className="sr-only" type="file" multiple accept="image/png,image/jpeg,image/webp" onChange={e => { void enviar(Array.from(e.target.files ?? [])); e.target.value = ''; }} /><button type="button" className="button primary" disabled={busy} onClick={() => input.current?.click()}><Icon name="upload" size={16} />{busy ? 'Salvando…' : 'Adicionar imagens'}</button></div>
+    <p className="muted small-text">PNG, JPG ou WebP, até 10 MB por imagem. Para imagens de antes e depois, selecione essa composição.</p>
+    <div className="referencia-filter"><label>Mostrar <select value={filtro} onChange={e => setFiltro(e.target.value)}><option value="todos">Todos os procedimentos</option>{PROCEDIMENTOS.map(p => <option key={p} value={p}>{PROCEDIMENTO_LABELS[p]}</option>)}<option value="outros">Outros</option></select></label><span className="muted small-text">{refs.length} referência(s)</span></div>
+    {error ? <div role="alert">{error} <button type="button" className="button outline" onClick={reload}>Tentar novamente</button></div> : loading && !data ? <p>Carregando referências…</p> : refs.length ? <div className="marca-gallery referencia-empresa-gallery">{refs.map(ref => <article className="marca-ref" key={ref.id}><a href={imageUrl(ref.arquivo)} target="_blank" rel="noreferrer"><img src={imageUrl(ref.arquivo)} alt={`Referência ${ref.id}`} loading="lazy" /></a><div className="referencia-controls"><strong>{ref.id.replace(/_/g, ' ')}</strong><label>Procedimento<select aria-label={`Procedimento de ${ref.id}`} disabled={busy} value={ref.procedimento} onChange={e => void categorizar(ref, e.target.value, ref.composicao)}>{!(PROCEDIMENTOS as readonly string[]).includes(ref.procedimento) && <option value={ref.procedimento}>{ref.procedimento}</option>}{PROCEDIMENTOS.map(p => <option key={p} value={p}>{PROCEDIMENTO_LABELS[p]}</option>)}</select></label><label>Composição<select aria-label={`Composição de ${ref.id}`} disabled={busy} value={ref.composicao} onChange={e => void categorizar(ref, ref.procedimento, e.target.value)}>{COMPOSICOES.map(c => <option key={c} value={c}>{composicaoLabel(c)}</option>)}</select></label></div></article>)}</div> : <Empty>Nenhuma referência neste procedimento.</Empty>}
+  </section>;
+}
+
 function EmpresaForm({ empresa, onClose, onSaved }: { empresa: Empresa | null; onClose: () => void; onSaved: () => void }) {
   const { api } = useRuntime(); const toast = useToast(); const uid = useId();
   const [form, setForm] = useState<EmpresaInput>(() => empresa ? toInput(empresa) : blank());
   const [tab, setTab] = useState('informacoes');
-  const tabs = [{ id: 'informacoes', label: 'Informações', icon: 'building' }, { id: 'unidades', label: 'Unidades', icon: 'grid' }, { id: 'identidade', label: 'Identidade Visual', icon: 'image' }];
+  const tabs = [{ id: 'informacoes', label: 'Informações', icon: 'building' }, { id: 'unidades', label: 'Unidades', icon: 'grid' }, { id: 'identidade', label: 'Identidade Visual', icon: 'image' }, { id: 'referencias', label: 'Referências', icon: 'image' }];
   const [idTouched, setIdTouched] = useState(!!empresa);
   const [aliases, setAliases] = useState(() => (empresa?.aliases ?? []).join(', '));
   const [file, setFile] = useState<File | null>(null);
@@ -198,6 +233,7 @@ function EmpresaForm({ empresa, onClose, onSaved }: { empresa: Empresa | null; o
           </div>
         </fieldset>
         </section></div>
+        <div role="tabpanel" id={`${uid}-panel-referencias`} aria-labelledby={`${uid}-tab-referencias`} hidden={tab !== 'referencias'}>{tab === 'referencias' && (empresa ? <ReferenciasEmpresa empresa={empresa} /> : <section className="card"><p>Salve a empresa para adicionar referências.</p></section>)}</div>
         {uploadStatus && <p className="upload-status" role="status"><Icon name="check" size={18}/>{uploadStatus}</p>}
         {problem && <p className="notice error" role="alert">{problem}</p>}
       </div>

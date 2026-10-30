@@ -4,6 +4,7 @@ import { zodTextFormat } from 'openai/helpers/zod';
 import sharp from 'sharp';
 import { iaModelo } from '../../shared/types';
 import type { IaSituacao, OrchestratorConfig } from '../../shared/types';
+import type { DecisionCreateParams } from 'openai/resources/decisions';
 import type { IaRegistry } from './IaRegistry';
 import type { EventBus } from '../core/EventBus';
 
@@ -18,6 +19,10 @@ function motivoErro(error: unknown): string {
   // Nunca repassa fragmentos de chave (mesmo mascarados pela OpenAI).
   return texto.replace(/(provided:\s*)\S+/gi, '$1[oculta]').replace(/(sk|key)[-_][\w*-]+/g, '[chave]').trim().slice(0, 240);
 }
+
+/** `gpt-6-luna-decisions` é o id local; na API o modelo é o mesmo. Decisions não escreve texto, então pedidos de texto livre vão ao Luna na Responses API. */
+const modeloApi = (modelo: string) => iaModelo(modelo)?.provedor === 'openai_decisions' ? 'gpt-6-luna' : modelo;
+export interface ImagemDecisao { legenda: string; buffer: Buffer }
 
 /** Cliente só é construído nos modos explicitamente habilitados. Sem segredos no config. */
 export class AiClient {
@@ -44,17 +49,31 @@ export class AiClient {
   }
   /** Modelo/esforço da situação conforme Configurações › Modelos de IA (default: env). */
   alvo(situacao: IaSituacao, fallback: string): { modelo: string; effort?: string } { return this.ia?.para(situacao) ?? { modelo: fallback }; }
-  async json<T extends z.ZodType>(target: string | { modelo: string; effort?: string }, schema: T, system: string, prompt: string, image?: Buffer): Promise<z.infer<T>> {
+  get disponivel(): boolean { return this.hasKey; }
+  async json<T extends z.ZodType>(target: string | { modelo: string; effort?: string }, schema: T, system: string, prompt: string, image?: Buffer | Buffer[]): Promise<z.infer<T>> {
+    return (await this.jsonComUso(target, schema, system, prompt, image)).dados;
+  }
+  async jsonComUso<T extends z.ZodType>(target: string | { modelo: string; effort?: string }, schema: T, system: string, prompt: string, image?: Buffer | Buffer[]): Promise<{ dados: z.infer<T>; tokens: { entrada: number; saida: number } }> {
     const { modelo: model, effort } = typeof target === 'string' ? { modelo: target, effort: undefined } : target;
     return this.retry(async () => {
-      const response = await this.client.responses.parse({ model, instructions: system, ...(effort ? { reasoning: { effort: effort as 'high' } } : {}),
-        input: [{ role: 'user', content: image ? [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: `data:image/png;base64,${image.toString('base64')}`, detail: 'high' }] : [{ type: 'input_text', text: prompt }] }],
+      const response = await this.client.responses.parse({ model: modeloApi(model), instructions: system, ...(effort ? { reasoning: { effort: effort as 'high' } } : {}),
+        input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }, ...(image ? (Array.isArray(image) ? image : [image]).map(buffer => ({ type: 'input_image' as const, image_url: `data:image/png;base64,${buffer.toString('base64')}`, detail: 'high' as const })) : [])] }],
         text: { format: zodTextFormat(schema, 'resultado') },
       });
       const parsed = schema.parse(response.output_parsed);
-      await this.ia?.registrar({ modelo: model, tokensEntrada: response.usage?.input_tokens ?? 0, tokensSaida: response.usage?.output_tokens ?? 0 });
-      return parsed;
+      const tokens = { entrada: response.usage?.input_tokens ?? 0, saida: response.usage?.output_tokens ?? 0 };
+      await this.ia?.registrar({ modelo: model, tokensEntrada: tokens.entrada, tokensSaida: tokens.saida });
+      return { dados: parsed, tokens };
     }, model);
+  }
+  /** Decisions API: escolhas e probabilidades sobre o mesmo texto e imagens. */
+  async decidir(modelo: string, texto: string, imagens: ImagemDecisao[], questions: DecisionCreateParams['questions']) {
+    return this.retry(async () => {
+      const input = imagens.length ? [{ role: 'user' as const, content: [{ type: 'input_text' as const, text: texto }, ...imagens.flatMap(imagem => [{ type: 'input_text' as const, text: imagem.legenda }, { type: 'input_image' as const, image_url: `data:image/png;base64,${imagem.buffer.toString('base64')}`, detail: 'low' as const }])] }] : texto;
+      const decision = await this.client.decisions.create({ model: modeloApi(modelo), input, questions });
+      await this.ia?.registrar({ modelo, provedor: 'openai_decisions', tokensEntrada: decision.usage.input_tokens, tokensSaida: decision.usage.output_tokens });
+      return decision;
+    }, modelo);
   }
   /** Camada fotográfica. Custo = tokens de texto/imagem de entrada e de imagem gerada × tabela do catálogo. */
   async photo(prompt: string, reference?: Buffer | Buffer[], situacao: IaSituacao = 'imagem_van_gogh'): Promise<{ buffer: Buffer; modelo: string; qualidade: string | null; custo: { usd: number; tokensEntrada: number; tokensSaida: number } }> {

@@ -15,6 +15,16 @@ describe('OpenAI sem rede: validação, retry e logs', () => {
     const bus = new EventBus(new MemoryStateStore(), new FakeClock(), new NanoIdGenerator(), 5);
     return { bus, ai: new AiClient(OrchestratorConfigSchema.parse({ AI_MODE: 'openai' }), bus, key) };
   }
+  it('envia arte e fontes na mesma revisão, mantendo a ordem das imagens', async () => {
+    calls.parse.mockResolvedValue({ output_parsed: { regra: 'ok' } });
+    const { ai } = setup('test-local-stub');
+    const imagens = [Buffer.from('arte'), Buffer.from('antes'), Buffer.from('depois')];
+    await ai.json('model-test', z.object({ regra: z.string() }), 'system', 'manifesto', imagens);
+    expect(calls.parse.mock.calls[0]![0].input[0].content).toEqual([
+      { type: 'input_text', text: 'manifesto' },
+      ...imagens.map(buffer => ({ type: 'input_image', image_url: `data:image/png;base64,${buffer.toString('base64')}`, detail: 'high' })),
+    ]);
+  });
   it('saída inválida é reexecutada uma vez e validada por Zod', async () => {
     calls.parse.mockResolvedValueOnce({ output_parsed: { regra: 12 } }).mockResolvedValueOnce({ output_parsed: { regra: 'Mantenha a margem.' } });
     const { ai, bus } = setup('test-local-stub');

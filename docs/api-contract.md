@@ -11,17 +11,43 @@ Fonte dos schemas e tipos: `src/shared/types.ts` (Zod v4; tipos com o mesmo nome
 - Todo erro JSON segue `ApiErrorSchema`: `{ "error": { "code": "VALIDATION_ERROR", "message": "Descrição em PT-BR" } }`. Códigos: 400 `VALIDATION_ERROR`; 404 `NOT_FOUND`; 409 `INVALID_TRANSITION` ou `HOP_LIMIT`; 502 `UPSTREAM_ERROR` (falha do classificador Jev); 500 `INTERNAL_ERROR` (mensagem pública sem stack, prompts ou credenciais). O 500 é aplicável a qualquer rota em caso de falha inesperada. Rota inexistente: 404 `NOT_FOUND`.
 - Paths de arte nos DTOs são relativos à raiz `ACERVO_DIR`, usam `/` e não incluem a URL `/acervo/`: `_staging/DEM-0001__v1.png` e `botox/botox__antes_depois_1__DEM-0001.png`. A UI prefixa `/acervo/` ao construir URLs. Paths `skillFile` identificam arquivos sob `BRAIN_DIR/skills`; não são URLs públicas.
 
+## Imagens anexadas à demanda
+
+1. Envie cada imagem a `POST /api/demandas/anexos` como `multipart/form-data`, com `arquivo` e `papel`: `antes`, `depois` ou `referencia`.
+2. A resposta 201 contém `{ anexo: { id, papel, nome, arquivo, largura, altura } }`. Guarde o `id`; `arquivo` é relativo ao acervo e permite prévia via `/acervo/<arquivo>`.
+3. Envie os IDs no JSON de `POST /api/demandas`:
+
+```json
+{
+  "briefing": "Demanda de cliente Royal Face: antes e depois inspirado nas referências anexadas.",
+  "clinicaNome": "Royal Face",
+  "procedimento": "preenchimento_labial",
+  "tipoTemplate": "antes_depois_1",
+  "headline": "Preenchimento Labial",
+  "cta": "Agende sua avaliação",
+  "anexos": ["<id retornado para antes>", "<id retornado para depois>", "<id da referência>"]
+}
+```
+
+4. Quando `demanda.producao.etapa` for `aguardando`, envie `POST /api/demandas/:id/produzir` com `{}`. Acompanhe os eventos SSE ou `GET /api/demandas/:id`; `stagingPath` aponta à arte para revisão humana. Produção usa o modelo configurado para o criador.
+
+Limites: uma foto de antes, uma de depois e até 8 referências. PNG/JPG/WebP estáticos, até 10 MB e 40 megapixels por arquivo. O par antes/depois deve estar completo; se não houver template explícito, ele seleciona `antes_depois_1`. IDs inexistentes, repetidos, caminhos livres, imagens inválidas e pares incompletos retornam 400; o limite do corpo multipart é 11 MB (413). Uploads não iniciam geração.
+
+`Demanda.anexos` retorna descritores completos, preservados nos ajustes e reinícios. A primeira referência explícita define a geometria e a hierarquia do layout; referências não autorizam copiar textos, preços ou pacientes. Na geração real, a IA recebe as fotos de antes/depois e as referências com papéis identificados, entregando a montagem completa sem sobreposição posterior das fotos. A instrução exige fidelidade ao paciente, mas edição generativa pode alterar detalhes: a aprovação deve comparar com as fontes. `ArteMeta.composicaoFotos` opcional é `ia_integrada` ou `local`; `ilustrativo=false` indica uso de fotos reais, não garantia de pixels idênticos. Sem um par real, Van Gogh não gera antes/depois. O modo simulado usa composição local, sem geração de layout inspirada por IA. Os arquivos enviados permanecem no acervo mesmo se forem removidos do formulário.
+
+Em comparativos, uma chamada ao modelo de visão configurado identifica as regiões fotográficas das referências. Elas são neutralizadas na cópia enviada ao gerador para evitar reutilizar pacientes da referência; os arquivos originais permanecem intactos. A revisão real recebe as fontes e referências originais. Essa preparação usa a credencial e o modelo de visão existentes e registra o consumo no uso geral de IA.
+
 ## Triagem sem produção
 
 ### POST /api/triagem
 
-Body estrito `TriagemRequestSchema`: `{ "texto": "Preciso de um antes e depois de botox para a Royal Face Castanhal" }`. Texto aparado, 3–4000 caracteres. 200 `TriagemResponseSchema`: `{ triagem: Triagem }`. Não cria demanda, não grava mensagens de atores e não inicia geração. Para produzir, envie posteriormente os valores confirmados a `POST /api/demandas`.
+Body estrito `TriagemRequestSchema`: `{ "texto": "Preciso de um antes e depois de botox para a Royal Face Castanhal", "anexos": ["anx_..."] }`. Texto aparado, 3–4000 caracteres; `anexos` opcional (IDs enviados a `POST /api/demandas/anexos`). 200 `TriagemResponseSchema`: `{ triagem: Triagem }`. Não cria demanda, não grava mensagens de atores e não inicia geração. Para produzir, envie posteriormente os valores confirmados a `POST /api/demandas`.
 
-`Triagem` contém `id` (`TRI-<nanoid>`), `texto`, `empresa: { id: string|null, nome: string|null, cadastrada: boolean, confianca: number }`, `procedimento`, `procedimentoConfianca`, `tipoTemplate`, `tipoTemplateConfianca`, `familiaArte` (`antes_depois|banco_imagem`), `provider` (`jev|mock` nesta implementação), `modelo`, `latenciaMs`, `tokens: { entrada, saida }`, `custo: { usd, brl, cotacaoUsdBrl }`, `criadoEm` (ISO UTC). Confianças entre 0 e 1; tokens inteiros. Custos não arredondados: a UI formata. `familiaArte` deriva do template, não é outra pergunta ao modelo.
+`Triagem` contém `id` (`TRI-<nanoid>`), `texto`, `empresa: { id: string|null, nome: string|null, cadastrada: boolean, confianca: number }`, `procedimento`, `procedimentoConfianca`, `tipoTemplate`, `tipoTemplateConfianca`, `familiaArte` (`antes_depois|banco_imagem`), `provider` (`openai_decisions|jev|mock`), `briefing` (itens tipados), `etapas` (`regras|leitura_texto|decisoes`, com modelo, status, campos, latência, tokens e custo próprios), `alertas`, `anexos`, `modelo`, `latenciaMs`, `tokens: { entrada, saida }`, `custo: { usd, brl, cotacaoUsdBrl }`, `criadoEm` (ISO UTC). Confianças entre 0 e 1; tokens inteiros. Custos não arredondados: a UI formata. `familiaArte` deriva do template, não é outra pergunta ao modelo.
 
-Uma chamada Jev com três perguntas choice (`procedimento`, `empresa`, `tipo_arte`). `CLASSIFIER_PROVIDER=jev` prevalece sobre `AI_MODE`, inclusive `mock`. Sem credencial ou com outro provider, retorna heurísticas mock, custo zero e aviso SSE. Empresas são lidas de `BRAIN_DIR/clientes.json` a cada chamada (ausente = lista vazia; JSON inválido = erro claro no motor e HTTP 500 genérico). Opção `nao_identificada` ou confiança abaixo de 0,7 produz `cadastrada=false`, `id=null` e nome próprio extraído do texto, se houver; caso contrário `nome=null`.
+Divisão das etapas em `AGENTS.md §8.1`. A classificadora vem de Configurações › Modelos de IA (`triagem`: Luna via Decisions API, Jev ou Simulado), sobre os padrões `CLASSIFIER_PROVIDER` e `AI_MODE`; a leitura de texto vem da situação `leitura_briefing`. Sem credencial, retorna heurísticas, custo zero e aviso SSE. Empresas são lidas de `BRAIN_DIR/clientes.json` a cada chamada (ausente = lista vazia; JSON inválido = erro claro no motor e HTTP 500 genérico). Opção `nao_identificada` ou confiança abaixo de 0,7 produz `cadastrada=false`, `id=null` e nome próprio extraído do texto, se houver; caso contrário `nome=null`.
 
-Erros: 400 JSON/body inválido; 502 `{ error: { code: "UPSTREAM_ERROR", message: "Falha no classificador Jev." } }` para HTTP upstream, timeout ou resposta inválida. Timeout por tentativa: 10 segundos; até três retries com backoff 250/500/1000 ms apenas em 429/529. Latência inclui chamada, parse e eventuais retries/backoff, sem leitura do cadastro.
+Erros: 400 JSON/body inválido; 502 `{ error: { code: "UPSTREAM_ERROR", message: "Falha no classificador de IA." } }` para HTTP upstream, timeout ou resposta inválida. No Jev: timeout por tentativa de 10 segundos e até três retries com backoff 250/500/1000 ms apenas em 429/529. Na Decisions API: uma repetição, exceto em 4xx diferente de 429. Latência inclui chamada, parse e eventuais retries/backoff, sem leitura do cadastro.
 
 Eventos via `GET /api/events` (envelopes e replay padrão):
 
@@ -30,7 +56,7 @@ Eventos via `GET /api/events` (envelopes e replay padrão):
 
 Config pública (`GET /api/config`, schema compartilhado): `JEV_BASE_URL=https://api.typesafe.ai`, `JEV_MODEL=jev-latest`, `JEV_PRICE_INPUT_USD_PER_MTOK=0.042`, `JEV_PRICE_OUTPUT_USD_PER_MTOK=0`, `USD_BRL=5.5`. Preços por milhão de tokens e cotação são defaults configuráveis, sem consulta cambial automática. `usd=(entrada*precoEntrada+saida*precoSaida)/1e6`; `brl=usd*USD_BRL`. `JEV_API_KEY` é privada, lida apenas por dependência/env, nunca pelo objeto de config nem por respostas/logs.
 
-`POST /api/demandas` compartilha a classificação Jev, preserva procedimento/template explícitos e preenche `clinicaNome` quando ausente. `confianca` é o mínimo das perguntas efetivamente usadas (incluindo empresa quando preenche clínica). Essa rota continua iniciando produção.
+`POST /api/demandas` compartilha a mesma classificação (ou reaproveita `triagemId`, se texto e anexos não mudaram), grava `briefingItens`, preserva procedimento/template explícitos e preenche `clinicaNome` quando ausente. `confianca` é o mínimo das perguntas efetivamente usadas (incluindo empresa quando preenche clínica). Essa rota continua iniciando produção.
 
 ## Rotas de demandas
 

@@ -7,7 +7,7 @@ import type { BriefingItem, BriefingTipo } from '../../shared/types';
  * 3) O restante é perguntado ao classificador: é só identificação do pedido ou é briefing (e de que tipo)?
  */
 
-const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+export const fold = (t: string) => t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const GATILHOS_BRIEFING = 'entrega\\w*|tom|chamada|cta|headline|t[ií]tulo|texto|frase|slogan|cor|cores|paleta|p[uú]blico|prazo|data|validade|whatsapp|telefone|contato|endere[cç]o|instagram|pre[cç]o|valor|promo\\w*|desconto|parcela\\w*|condic\\w*|beneficio\\w*|destaque|selo|logo';
 
 export function segmentar(texto: string): string[] {
@@ -46,8 +46,10 @@ export function tipoPorRegra(trecho: string): Pick<BriefingItem, 'tipo' | 'valor
   const t = fold(trecho);
   const parcelado = trecho.match(/(\d{1,2})\s*(?:x|vezes)\s*(?:de\s*)?(?:R\$\s*)?(\d[\d.]*(?:,\d{1,2})?)/i);
   if (parcelado && (/R\$/i.test(trecho) || /,\d{2}\b/.test(parcelado[2]!))) return { tipo: 'preco', valor: `${parcelado[1]}x de R$ ${parcelado[2]}` };
-  const preco = trecho.match(/R\$\s*([\d.]+(?:,\d{1,2})?)/i);
+  const preco = trecho.match(/R\$\s*([\d.]+(?:,\d{1,2})?)/i) ?? trecho.match(/\b(\d[\d.]*(?:,\d{1,2})?)\s*reais\b/i);
   if (preco) return { tipo: 'preco', valor: `R$ ${preco[1]}` };
+  // Negação nunca vira oferta: "sem falar em desconto" é restrição para o criador.
+  if (/\b(sem|nao|evitar|nunca)\b.*\b(promo\w*|desconto|black friday|gratis|brinde|sorteio)\b/.test(t)) return { tipo: 'restricao' };
   const pct = t.match(/(\d{1,2})\s*%/);
   if (pct || /\b(promo\w*|desconto|black friday|gratis|brinde|sorteio)\b/.test(t)) return { tipo: 'promocao', ...(pct ? { valor: `${pct[1]}% de desconto` } : {}) };
   const data = extrairData(trecho);
@@ -60,12 +62,14 @@ export function tipoPorRegra(trecho: string): Pick<BriefingItem, 'tipo' | 'valor
 }
 
 /** Opções do classificador para cada trecho (uma pergunta por trecho, todas na mesma chamada). */
-export const criteriosTrecho: Record<'pedido' | Exclude<BriefingTipo, 'preco' | 'promocao' | 'contato' | 'texto_literal' | 'data_entrega'>, string> = {
+export const criteriosTrecho: Record<'pedido' | Exclude<BriefingTipo, 'preco' | 'promocao' | 'contato' | 'texto_literal' | 'data_entrega' | 'descricao_antes' | 'descricao_depois' | 'referencia_visual'>, string> = {
   pedido: 'Só identifica o pedido: tipo de arte (antes e depois, institucional, banco de imagem), empresa/unidade, procedimento, abastecimento de acervo ou quem vai produzir. Não traz conteúdo para a arte.',
   chamada_cta: 'Chamada para ação / texto do botão (ex.: "agende sua avaliação", "fale no WhatsApp").',
   headline: 'Título, frase principal ou mensagem que deve aparecer na arte.',
   tom_estilo: 'Tom, estilo visual, cores, clima ou referência estética (ex.: "tom acolhedor", "cores claras", "mais elegante").',
   publico: 'Público-alvo ou perfil de paciente (ex.: "mulheres 30+", "noivas").',
+  modelo_foto: 'Quem deve aparecer na imagem (ex.: "mulher loira de cabelo curto").',
+  restricao: 'O que não deve ser feito ou dito na arte (ex.: "sem falar em desconto").',
   prazo_data: 'Data, prazo, validade ou evento (ex.: "para sexta", "Dia das Mães", "válido até 30/11").',
   outro_briefing: 'Outra informação de conteúdo para a arte que não se encaixa acima (benefício, diferencial, observação para o designer).',
 };
@@ -73,6 +77,10 @@ export const criteriosTrecho: Record<'pedido' | Exclude<BriefingTipo, 'preco' | 
 /** Fallback sem classificador: trecho com vocabulário só de pedido → pedido; caso contrário briefing genérico. */
 export function tipoHeuristico(trecho: string): 'pedido' | BriefingTipo {
   const t = fold(trecho);
+  if (/\bdepois\b.*\b(boca|labios?|pele|rosto|mandibula|testa|volume|definid\w*|contorn\w*|natural\w*)\b/.test(t)) return 'descricao_depois';
+  if (/\bantes\b.*\b(boca|labios?|pele|rosto|mandibula|testa|fin[ao]s?|ressecad\w*|flacid\w*)\b/.test(t)) return 'descricao_antes';
+  if (/\b(mulher|homem|modelo|morena|loira|ruiva|negra|jovem|senhora)\b/.test(t)) return 'modelo_foto';
+  if (/\breferencia\b/.test(t)) return 'referencia_visual';
   if (/\b(tom|estilo|cores?|paleta|clima|elegante|acolhedor|moderno|clean)\b/.test(t)) return 'tom_estilo';
   if (/\b(chamada|cta|agende|agendar|fale|chame|clique)\b/.test(t)) return 'chamada_cta';
   if (/\b(publico|mulheres|homens|noivas|pacientes)\b/.test(t)) return 'publico';

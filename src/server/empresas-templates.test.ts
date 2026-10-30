@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import sharp from 'sharp';
 import { createApp } from './app';
 import { fixture } from '../orchestrator/test-support';
 import { EmpresaResponseSchema, ListEmpresasResponseSchema, ListTemplatesResponseSchema, TemplateResponseSchema } from '../shared/types';
@@ -10,6 +11,33 @@ async function setup() {
 const json = (body: unknown) => ({ headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
 describe('API empresas/templates', () => {
+  it('preserva referências legadas e sincroniza uploads e categorias com a skill de marca', async () => {
+    const f = await setup();
+    try {
+      const endpoint = '/api/empresas/royal_face/referencias';
+      const list = async () => (await (await f.api.request(endpoint)).json()) as { referencias: import('../shared/types').ReferenciaMarca[] };
+      const legadas = (await list()).referencias;
+      expect(legadas.length).toBeGreaterThan(0);
+      const antiga = legadas.find(ref => ref.procedimento === 'botox')!;
+      const recategorizar = await f.api.request(`${endpoint}/${antiga.id}`, { method: 'PUT', ...json({ procedimento: 'preenchimento_labial', composicao: antiga.composicao }) });
+      expect(recategorizar.status).toBe(200);
+      const imagem = await sharp({ create: { width: 2, height: 2, channels: 3, background: '#ffffff' } }).jpeg().toBuffer();
+      const form = new FormData(); form.append('arquivo', new File([new Uint8Array(imagem)], 'exemplo.jpg', { type: 'image/jpeg' })); form.append('procedimento', 'botox'); form.append('composicao', 'informativa_clean');
+      expect((await f.api.request(endpoint, { method: 'POST', body: form })).status).toBe(200);
+      const atuais = (await list()).referencias;
+      expect(atuais).toHaveLength(legadas.length + 1);
+      expect(atuais.find(ref => ref.id === antiga.id)).toEqual({ ...antiga, procedimento: 'preenchimento_labial' });
+      const nova = atuais.at(-1)!;
+      expect(nova).toMatchObject({ procedimento: 'botox', composicao: 'informativa_clean', usarCopy: false });
+      expect(await f.storage.read(nova.arquivo)).toEqual(imagem);
+      expect((await f.app.marcas.get('royal_face'))?.referencias).toEqual(atuais);
+      const empresa = (await f.app.empresas.get('royal_face'))!;
+      await f.app.empresas.upsert({ ...empresa, nome: 'Nome alterado' });
+      expect((await list()).referencias).toEqual(atuais);
+      expect((await f.api.request(`${endpoint}/${antiga.id}`, { method: 'PUT', ...json({ procedimento: 'invalido', composicao: antiga.composicao }) })).status).toBe(400);
+      expect((await f.api.request('/api/empresas/inexistente/referencias')).status).toBe(404);
+    } finally { await f.close(); }
+  });
   it('persiste logo escolhida, borda e propriedades da sombra no template', async () => {
     const f = await setup();
     try {

@@ -7,6 +7,18 @@ import { applyEvent, approvalQueue, feedbackRules, initialState, latestSlotPath,
 
 const envelope=(event:SseEvent,id='evt-1')=>SseEnvelopeSchema.parse({...event,id,ts:'2026-10-28T12:00:00Z'});
 describe('applyEvent',()=>{
+  it('separa o histórico da comunicação ao vivo e não repete mensagens antigas',async()=>{
+    const message=(await createApi(createMockApi().fetch).messages()).messages[0]!;
+    const history={...initialState(),messages:[message]};
+    const replay=envelope({type:'message.sent',payload:message});
+    expect(history.liveMessage).toBeNull();
+    expect(applyEvent(history,replay).liveMessage).toBeNull();
+    const fresh=envelope({type:'message.sent',payload:{...message,id:'new-message'}},'new-event');
+    const live=applyEvent(history,fresh);
+    expect(live.liveMessage).toEqual(fresh);
+    expect(applyEvent(live,{...replay,id:'replay-event'}).liveMessage).toEqual(fresh);
+    expect(applyEvent(live,{...fresh,id:'duplicate-event'}).liveMessage).toEqual(fresh);
+  });
   it('atualiza o ator sem modificar o estado anterior',()=>{const old=initialState();const next=applyEvent(old,envelope({type:'actor.status',payload:{actorId:'monalisa',status:'generating',demandaId:'DEM-0001'}}));expect(next.actors.monalisa.status).toBe('generating');expect(old.actors.monalisa.status).toBe('idle');});
   it('adiciona mensagens e ignora reentregas por ID do envelope e da mensagem',async()=>{const api=createApi(createMockApi().fetch);const message=(await api.messages()).messages[0]!;const e=envelope({type:'message.sent',payload:message});const state=applyEvent(initialState(),e);expect(state.messages).toEqual([message]);expect(applyEvent(state,e)).toBe(state);expect(applyEvent(state,{...e,id:'different-envelope'}).messages).toHaveLength(1);});
   it('atualiza demandas completas e não regride com replay antigo',()=>{const demand=seedDemand(1);const state=applyEvent(initialState(),envelope({type:'demand.updated',payload:demand}));expect(state.demandas).toEqual([demand]);const older={...demand,estado:'EM_PRODUCAO' as const,updatedAt:'2026-10-28T01:00:00Z'};expect(applyEvent(state,envelope({type:'demand.updated',payload:older},'evt-old')).demandas).toEqual([demand]);});

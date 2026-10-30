@@ -121,3 +121,13 @@ LEARNED RULES (mandatory, never violate): {{aprendizados}}
 ## Self-Improvement Log
 
 <!-- APPEND-ONLY: o BrainLoader adiciona entradas abaixo desta linha -->
+
+### L01 · 2026-10-29T22:26:32.043Z · antes_depois_1 · fonte: awr_humano · DEM-0018
+- **Regra:** Antes de entregar este template, aplique a orientação visual: Quando houver referência anexada, siga fielmente seu layout: mantenha a posição, a escala e a união dos quadros, a hierarquia tipográfica e a posição da logo. Integre o par real diretamente na geração, preenchendo os quadros de ponta a ponta, sem faixas vazias nem halos. Refaça a composição da versão anterior para seguir a primeira referência, mantendo a anatomia e o resultado do paciente. O título do procedimento deve ficar abaixo do bloco comparativo, como na referência, e a logo no rodapé à direita.
+- **Motivo original:** "Quando houver referência anexada, siga fielmente seu layout: mantenha a posição, a escala e a união dos quadros, a hierarquia tipográfica e a posição da logo. Integre o par real diretamente na geração, preenchendo os quadros de ponta a ponta, sem faixas vazias nem halos. Refaça a composição da versão anterior para seguir a primeira referência, mantendo a anatomia e o resultado do paciente. O título do procedimento deve ficar abaixo do bloco comparativo, como na referência, e a logo no rodapé à direita."
+- **Status:** ativo
+
+### L02 · 2026-10-29T22:31:17.673Z · antes_depois_1 · fonte: awr_humano · DEM-0018
+- **Regra:** Revise a grafia em português e mantenha headline e CTA completos dentro das caixas reservadas do template.
+- **Motivo original:** "A versão anterior usou o par da referência. Use exclusivamente os anexos de antes e depois como fonte do paciente e mantenha a referência apenas para o layout. Preserve apenas um espaço de logo no rodapé à direita. O título continua abaixo do par. Não incluir nenhuma fotografia de terceiros nem caixas magenta extras."
+- **Status:** ativo

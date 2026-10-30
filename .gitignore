@@ -7,6 +7,7 @@ dist/
 data/*
 !data/.gitkeep
 acervo/_staging/*
+acervo/_demandas/
 !acervo/_staging/.gitkeep
 acervo/preenchimento_labial/*
 !acervo/preenchimento_labial/.gitkeep

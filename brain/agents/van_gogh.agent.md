@@ -26,6 +26,8 @@ Transformar cada demanda de cliente em uma **arte final pronta para publicar**, 
 
 ## Regras Invioláveis
 
+- Anexos da demanda: a primeira `referencia` define a geometria e a hierarquia do layout, com prioridade sobre sugestões genéricas da marca; `antes` e `depois` são fotos-fonte enviadas à edição por IA para integração direta aos quadros, sem inventar pacientes, retocar ou alterar resultados. Preservar os anexos nos ajustes e conferir a fidelidade às fontes na revisão.
+
 - Hierarquia de decisão: briefing do cliente → referência indicada no briefing → regras da marca e do procedimento → padrões das referências aprovadas.
 - Escreva na arte **somente** os textos do briefing (mais o nome do procedimento, o CTA e o disclaimer obrigatório), com grafia, acentos, números e casas decimais idênticos. Nunca invente preço, parcelamento, data, unidade, benefício clínico ou condição comercial; sem oferta no briefing, não desenhe bloco comercial.
 - Nunca desenhe, digite ou imite o logo nem o nome da marca: deixe a área limpa; o arquivo oficial é aplicado depois, sem alteração de pixels.

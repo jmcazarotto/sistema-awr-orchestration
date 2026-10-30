@@ -29,7 +29,10 @@ export class ArtDirector {
     if (demanda.estado !== 'CLASSIFICADA') return;
     let classificacao = message.payload.classificacao;
     if (classificacao.confianca < 0.6) {
-      classificacao = await this.classifier.classify(this.bus.snapshot().inputs[demanda.id] ?? { briefing: demanda.briefing });
+      // Reavaliação refaz a chamada: reaproveitar a triagem daria a mesma resposta.
+      const { triagemId: _triagem, ...input } = this.bus.snapshot().inputs[demanda.id] ?? { briefing: demanda.briefing };
+      const { briefingItens: _itens, ...revisada } = await this.classifier.classify(input);
+      classificacao = revisada;
       this.bus.log('info', 'Triagem com baixa confiança revisada pelo Diretor', demanda.id, 'art_director');
     }
     await this.brain.loadSkill(classificacao.procedimento);
@@ -48,7 +51,7 @@ export class ArtDirector {
     const classification = demanda.classificacao;
     if (!classification || !demanda.criadorAtual) throw new Error('Demanda sem classificação');
     await this.bus.send(this.bus.envelope({ action: 'PRODUZIR_ARTE', from: 'art_director', to: demanda.criadorAtual, demandaId: demanda.id,
-      hop: demanda.hop, causationId, payload: { procedimento: classification.procedimento, tipoTemplate: classification.tipoTemplate, skillFile: classification.skillFile, briefing: demanda.briefing } }));
+      hop: demanda.hop, causationId, payload: { procedimento: classification.procedimento, tipoTemplate: classification.tipoTemplate, skillFile: classification.skillFile, briefing: demanda.briefing, ...(demanda.briefingItens ? { briefingItens: demanda.briefingItens } : {}), anexos: demanda.anexos } }));
   }
   private async fill(message: InboxMessage<'PREENCHER_ACERVO'>): Promise<void> {
     const { procedimento, tipoTemplate } = message.payload;
@@ -100,7 +103,7 @@ export class ArtDirector {
     // A atualização de hop acontece no mesmo commit de persistência da ordem (EventBus).
     const hop = demanda.hop + 1;
     await this.bus.send(this.bus.envelope({ action: 'AJUSTAR_ARTE', from: 'art_director', to: demanda.criadorAtual, demandaId: demanda.id, hop,
-      causationId, payload: { feedbackDiretor: feedback, versaoAnterior: demanda.versaoAtual } }));
+      causationId, payload: { feedbackDiretor: feedback, versaoAnterior: demanda.versaoAtual, anexos: demanda.anexos } }));
   }
   private async humanReview(message: InboxMessage<'FEEDBACK_HUMANO'>): Promise<void> {
     let demanda = this.bus.getDemanda(message.demandaId);

@@ -1,10 +1,12 @@
 import { nanoid } from 'nanoid';
-import { ActorIdSchema, EmpresaIdSchema, SaveTemplateRequestSchema, TemplateArteSchema, TemplatesQuerySchema } from '../shared/types';
+import { DemandaAnexos } from './services/DemandaAnexos';
+import sharp from 'sharp';
+import { ActorIdSchema, COMPOSICOES, EmpresaIdSchema, ProcedimentoSchema, SaveTemplateRequestSchema, TemplateArteSchema, TemplatesQuerySchema } from '../shared/types';
 import { ClientesRegistry } from './brain/ClientesRegistry';
 import { FsTemplateStore } from './core/FsTemplateStore';
 import { seedTemplates } from './templates/seeds';
 import { DemandaIdSchema, FeedbackHumanoSchema, FillAcervoRequestSchema, MessagesFilterSchema, OrchestratorConfigSchema, SubmitDemandInputSchema } from '../shared/types';
-import type { Demanda, FeedbackHumano, Orchestrator, OrchestratorConfig, SubmitDemandInput } from '../shared/types';
+import type { BriefingItem, Demanda, FeedbackHumano, Orchestrator, OrchestratorConfig, SubmitDemandInput } from '../shared/types';
 import { EventBus } from './core/EventBus';
 import { FileStateStore } from './core/FileStateStore';
 import { FsAcervoStorage } from './core/FsAcervoStorage';
@@ -14,6 +16,7 @@ import { allocateId, createDemanda } from './core/demandaFactory';
 import { OrchestratorError } from './core/errors';
 import { BrainLoader } from './brain/BrainLoader';
 import { AiClient } from './services/AiClient';
+import { DecisionsClient } from './services/DecisionsClient';
 import { TriagemService } from './services/TriagemService';
 import { IaRegistry } from './services/IaRegistry';
 import { JevClient } from './services/JevClient';
@@ -58,8 +61,9 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
   const ai = config.AI_MODE === 'openai' || config.IMAGE_ENGINE_MODE === 'openai' || openaiKey?.trim() ? new AiClient(config, bus, openaiKey, ia) : undefined;
   const brain = new BrainLoader(config.BRAIN_DIR, clock, bus, config.AI_MODE === 'openai' ? ai : undefined);
   const jevKey = dependencies.jevApiKey ?? process.env.JEV_API_KEY;
-  const triagem = new TriagemService(config, bus, jevKey ? new JevClient(config, jevKey, { fetch: dependencies.fetch }) : undefined, ia);
-  const classifier = new FastClassifier(config, ai, triagem);
+  const anexosStore = new DemandaAnexos(storage);
+  const triagem = new TriagemService(config, bus, jevKey ? new JevClient(config, jevKey, { fetch: dependencies.fetch }) : undefined, ia, { ...(ai ? { ai, decisions: new DecisionsClient(ai, config.CLASSIFIER_MODEL) } : {}), anexos: anexosStore, storage });
+  const classifier = new FastClassifier(triagem);
   const images = new ImageEngine(config, storage, brain, clock, ai, ia);
   const reviewer = new VisionReviewer(config, storage, brain, ai, dependencies);
   const watcher = new AcervoWatcher(config, bus, storage, dependencies.watchFiles);
@@ -71,10 +75,10 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
   let started = false; let startup: Promise<void> | undefined; let cancelDirector: (() => void) | undefined;
   const requireStarted = () => { if (!started) throw new OrchestratorError('INTERNAL_ERROR', 'Orquestrador não iniciado', 500); };
   async function classify(demanda: Demanda, input: SubmitDemandInput): Promise<Demanda> {
-    let classification;
-    try { classification = await classifier.classify(input); }
-    catch (error) { bus.log('error', error instanceof Error && error.message.includes('Jev') ? error.message : 'Falha na classificação de demanda', demanda.id); throw error; }
-    const classified = await bus.update(demanda.id, demand => { demand.classificacao = classification; demand.criadorAtual = 'van_gogh'; if (input.clinicaNome) demand.clinicaNome = input.clinicaNome; }, 'CLASSIFICADA');
+    let classification; let briefingItens: BriefingItem[];
+    try { ({ briefingItens, ...classification } = await classifier.classify(input)); }
+    catch (error) { bus.log('error', error instanceof Error && error.message.includes('classificador') ? error.message : 'Falha na classificação de demanda', demanda.id); throw error; }
+    const classified = await bus.update(demanda.id, demand => { demand.classificacao = classification; demand.briefingItens = briefingItens; demand.criadorAtual = 'van_gogh'; if (input.clinicaNome) demand.clinicaNome = input.clinicaNome; }, 'CLASSIFICADA');
     await bus.send(bus.envelope({ action: 'DEMANDA_CLASSIFICADA', from: 'system', to: 'art_director', demandaId: demanda.id, hop: classified.hop, payload: { classificacao: classification } }));
     return bus.getDemanda(demanda.id);
   }
@@ -115,12 +119,18 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
       try { await startup; } catch (error) { started = false; await watcher.stop(); await bus.stop(); throw error; } finally { startup = undefined; }
     },
     async stop() { if (startup) await startup; cancelDirector?.(); cancelDirector = undefined; await watcher.stop(); await bus.stop(); started = false; },
-    async triar(texto) { requireStarted(); return triagem.triar(texto); },
+    async triar(texto, anexos) { requireStarted(); return triagem.triar(texto, anexos); },
     async submitDemand(value) {
       requireStarted(); const input = extractBriefingText(SubmitDemandInputSchema.parse(value));
-      const demanda = await bus.transaction(state => { const demand = createDemanda(allocateId(state), 'cliente', input, clock.now().toISOString()); state.demandas[demand.id] = demand; state.inputs[demand.id] = input; return structuredClone(demand); });
+      const anexos = await anexosStore.resolve(input.anexos);
+      if (anexos.some(a => a.papel === 'antes')) {
+        input.tipoTemplate ??= 'antes_depois_1';
+        if (!input.tipoTemplate.startsWith('antes_depois')) throw new OrchestratorError('VALIDATION_ERROR', 'Fotos de antes e depois exigem um template de antes e depois.', 400);
+      }
+      const demanda = await bus.transaction(state => { const demand = createDemanda(allocateId(state), 'cliente', input, clock.now().toISOString(), anexos); state.demandas[demand.id] = demand; state.inputs[demand.id] = input; return structuredClone(demand); });
       bus.emit({ type: 'demand.updated', payload: demanda }); return classify(demanda, input);
     },
+    async uploadAnexo(arquivo, papel) { requireStarted(); return anexosStore.upload(arquivo, papel); },
     async humanReview(id: string, input: FeedbackHumano) {
       requireStarted(); DemandaIdSchema.parse(id); const feedback = FeedbackHumanoSchema.parse(input); const demanda = bus.getDemanda(id);
       if (demanda.estado !== 'AGUARDANDO_APROVACAO_AWR') throw new OrchestratorError('INVALID_TRANSITION', 'A demanda não aguarda aprovação AWR');
@@ -165,6 +175,36 @@ export function createOrchestratorWithDependencies(input: OrchestratorConfig, de
         const path = `_marcas/${id}/logo${variante === 'principal' ? '' : `-${variante}-${nanoid()}`}.${ext === 'jpeg' ? 'jpg' : ext}`;
         await storage.write(path, arquivo.dados);
         return clientes.setLogo(id, path, variante, principal);
+      },
+      async referencias(id) {
+        const empresa = (await clientes.list()).find(value => value.id === id);
+        if (!empresa) throw new OrchestratorError('NOT_FOUND', 'Empresa não encontrada.', 404);
+        return empresa.referencias ?? (await brain.loadMarca(id))?.referencias ?? [];
+      },
+      async adicionarReferencia(id, arquivo, procedimento, composicao) {
+        ProcedimentoSchema.parse(procedimento);
+        if (!(COMPOSICOES as readonly string[]).includes(composicao)) throw new OrchestratorError('VALIDATION_ERROR', 'Composição inválida.', 400);
+        const legadas = await this.referencias(id);
+        const ext = /\.(png|jpe?g|webp)$/i.exec(arquivo.nome)?.[1]?.toLowerCase();
+        if (!ext || !arquivo.dados.length || arquivo.dados.length > 10 * 1024 * 1024) throw new OrchestratorError('VALIDATION_ERROR', 'Referência deve ser PNG, JPG ou WebP de até 10 MB.', 400);
+        let formato: string | undefined;
+        try { formato = (await sharp(arquivo.dados, { limitInputPixels: 40_000_000 }).metadata()).format; } catch { /* arquivo ilegível */ }
+        if (formato !== (ext === 'jpg' || ext === 'jpeg' ? 'jpeg' : ext)) throw new OrchestratorError('VALIDATION_ERROR', 'O conteúdo da referência não corresponde a uma imagem válida.', 400);
+        const refId = `ref_${nanoid().toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        const path = `_marcas/${id}/referencias/${refId}.${ext === 'jpeg' ? 'jpg' : ext}`;
+        await storage.write(path, arquivo.dados);
+        const empresa = await clientes.atualizarReferencias(id, legadas, refs => [...refs, { id: refId, arquivo: path, procedimento, composicao, oferta: false, usarCopy: false, notas: '' }]);
+        return empresa.referencias!;
+      },
+      async categorizarReferencia(id, referenciaId, procedimento, composicao) {
+        ProcedimentoSchema.parse(procedimento);
+        if (!(COMPOSICOES as readonly string[]).includes(composicao)) throw new OrchestratorError('VALIDATION_ERROR', 'Composição inválida.', 400);
+        const legadas = await this.referencias(id);
+        const empresa = await clientes.atualizarReferencias(id, legadas, refs => {
+          if (!refs.some(ref => ref.id === referenciaId)) throw new OrchestratorError('NOT_FOUND', 'Referência não encontrada.', 404);
+          return refs.map(ref => ref.id === referenciaId ? { ...ref, procedimento, composicao } : ref);
+        });
+        return empresa.referencias!;
       },
     },
     templates: {

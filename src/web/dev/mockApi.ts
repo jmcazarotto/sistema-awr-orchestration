@@ -1,10 +1,10 @@
 import { adicionarLogo, atualizarLogos } from '../../shared/logos';
-import { PROCEDIMENTOS, PROCEDIMENTO_LABELS, TIPOS_TEMPLATE, SseEnvelopeSchema, OrchestratorConfigSchema, TriagemRequestSchema, EmpresaInputSchema, SaveTemplateRequestSchema, TemplatesQuerySchema } from '../../shared/types';
+import { PROCEDIMENTOS, PROCEDIMENTO_LABELS, TIPOS_TEMPLATE, SseEnvelopeSchema, OrchestratorConfigSchema, TriagemRequestSchema, EmpresaInputSchema, ReferenciaCategoriaSchema, SaveTemplateRequestSchema, TemplatesQuerySchema } from '../../shared/types';
 import type { ActorId, AcervoGrid, Demanda, EstadoDemanda, InboxMessage, Learning, ReviewResult, SkillDetail, SseEvent, SseEnvelope, SubmitDemandInput, Triagem } from '../../shared/types';
 import type { EventHandlers } from '../transport/events';
 import type { Empresa, TemplateArte } from '../../shared/types';
 import { seedEmpresas, seedTemplates } from './mockTemplates';
-import { IA_SITUACOES, IA_SITUACAO_INFO, IA_EFFORT_API, IaModelosSchema, iaModeloLabel } from '../../shared/types';
+import { IA_SITUACOES, IA_SITUACAO_INFO, IA_EFFORT_API, IaModelosSchema, iaModelo, iaModeloLabel } from '../../shared/types';
 import type { MarcaSkill } from '../../shared/types';
 import type { EtapaProducao, IaModelos, IaUsoResponse } from '../../shared/types';
 
@@ -26,7 +26,7 @@ export function createMockApi() {
   let messages: InboxMessage[] = demandas.flatMap(d => d.stagingPath ? [{ id:`msg-seed-${d.id}`, demandaId:d.id, from:d.criadorAtual!, to:'art_director' as const, hop:d.hop, action:'ARTE_ENTREGUE' as const, createdAt:d.createdAt, payload:{stagingPath:d.stagingPath,versao:d.versaoAtual,promptUsado:'Composição demonstrativa em modo local.',engine:'mock' as const} }] : []);
   let serial=0;
   let pausados: ActorId[] = [];
-  let iaModelos = Object.fromEntries(IA_SITUACOES.map(s=>[s,{modelo:IA_SITUACAO_INFO[s].modelos[0]!,effort:s==='triagem'||s==='rubrica'?null:'medio'}])) as IaModelos;
+  let iaModelos = Object.fromEntries(IA_SITUACOES.map(s=>[s,{modelo:IA_SITUACAO_INFO[s].modelos[0]!,effort:iaModelo(IA_SITUACAO_INFO[s].modelos[0]!)?.efforts.includes('medio')?'medio':null}])) as IaModelos;
   iaModelos.imagem_van_gogh={modelo:'gpt-image-2.5-flare',effort:'medio'};iaModelos.imagem_monalisa={modelo:'gpt-image-2.5-flare',effort:'medio'};
   // Uso de imagem por modelo (mock): ~US$ 0,04 por imagem de qualidade média.
   const usoImg: Record<string,{chamadas:number;tokensEntrada:number;tokensSaida:number;usd:number}> = {};
@@ -111,7 +111,7 @@ export function createMockApi() {
     const idNumber=Math.max(...demandas.map(d=>Number(d.id.slice(4))))+1;
     const base=seedDemand(idNumber,origin==='cliente'?'CLASSIFICADA':'EM_PRODUCAO');
     const p=input.procedimento??(/l[aá]bi/i.test(input.briefing)?'preenchimento_labial':/fio/i.test(input.briefing)?'fios_sustentacao':'botox');
-    const d:Demanda={...base,...input,origem:origin,hop:0,escalada:false,motivoEscalada:undefined,tentativaDiretor:0,criadorAtual:origin==='acervo'?'monalisa':'van_gogh',classificacao:{procedimento:p,tipoTemplate:input.tipoTemplate??'banco_imagem_1',agenteDesignado:origin==='acervo'?'monalisa':'van_gogh',skillFile:`brain/skills/${p}.skill.md`,confianca:.96}};
+    const d:Demanda={...base,...input,anexos:[],origem:origin,hop:0,escalada:false,motivoEscalada:undefined,tentativaDiretor:0,criadorAtual:origin==='acervo'?'monalisa':'van_gogh',classificacao:{procedimento:p,tipoTemplate:input.tipoTemplate??'banco_imagem_1',agenteDesignado:origin==='acervo'?'monalisa':'van_gogh',skillFile:`brain/skills/${p}.skill.md`,confianca:.96}};
     if(origin==='cliente'){const m=iaModelos.imagem_van_gogh;d.producao={etapa:'aguardando',modelo:m.modelo,qualidade:m.effort?IA_EFFORT_API[m.effort]:null,versao:0,etapas:[{etapa:'aguardando',em:now()}]};d.versaoAtual=0;delete d.stagingPath;}
     demandas.push(d);
     emit({type:'demand.updated',payload:d});
@@ -126,6 +126,7 @@ export function createMockApi() {
     const url=new URL(String(input),'http://mock.local');const path=url.pathname;const post=init?.method==='POST';const put=init?.method==='PUT';
     const form=init?.body instanceof FormData?init.body:null;
     const body=init?.body&&!form?JSON.parse(String(init.body)):{};
+    if(path==='/api/demandas/anexos' && post) return error('Envio de imagens disponível com a API local conectada. Saia do modo de demonstração.',400,'VALIDATION_ERROR');
     if(path==='/api/triagem' && post) {
       const parsed = TriagemRequestSchema.safeParse(body);
       if (!parsed.success) return error('Descreva a demanda com 3 a 4.000 caracteres.',400,'VALIDATION_ERROR');
@@ -142,7 +143,7 @@ export function createMockApi() {
       const unidadeCadastrada = cidade ? ['castanhal','maringá'].includes(cidade.toLowerCase()) : false;
       const nome = royal ? `Royal Face${cidade ? ` ${cidade}` : ''}` : texto.match(/(?:para a|clínica|empresa)\s+(.+)$/i)?.[1] ?? null;
       const usd = 450 * .042 / 1_000_000;
-      const triagem: Triagem = {id,texto,empresa:{id:royal?'royal_face':null,nome,cadastrada:royal,confianca:royal?1:nome?.length ? .5 : 0,rede:royal?{id:'royal_face',nome:'Royal Face'}:null,unidade:cidade?{id:null,nome:cidade,cadastrada:unidadeCadastrada}:null,metodo:royal?'cadastro':nome?'extracao':'nenhum'},procedimento,procedimentoConfianca:.97,tipoTemplate,familiaArte,tipoTemplateConfianca:.95,briefing:[],...(/acervo|abastec/i.test(texto)&&!royal?{agente:'monalisa' as const,agenteConfianca:1,agenteMotivo:'Pedido de abastecimento do acervo → Monalisa.',agenteRegra:true}:{agente:'van_gogh' as const,agenteConfianca:royal?1:.5,agenteMotivo:'Demanda de cliente → Van Gogh.',agenteRegra:royal}),provider:'mock',modelo:'jev-mock',latenciaMs:Math.round(performance.now()-started),tokens:{entrada:400,saida:50},custo:{usd,brl:usd*5.5,cotacaoUsdBrl:5.5},criadoEm:now()};
+      const triagem: Triagem = {id,texto,empresa:{id:royal?'royal_face':null,nome,cadastrada:royal,confianca:royal?1:nome?.length ? .5 : 0,rede:royal?{id:'royal_face',nome:'Royal Face'}:null,unidade:cidade?{id:null,nome:cidade,cadastrada:unidadeCadastrada}:null,metodo:royal?'cadastro':nome?'extracao':'nenhum'},procedimento,procedimentoConfianca:.97,tipoTemplate,familiaArte,tipoTemplateConfianca:.95,briefing:[],anexos:parsed.data.anexos??[],alertas:[],etapas:[{id:'decisoes',modelo:'simulado',status:'simulada',campos:['procedimento','tipo_arte','agente'],latenciaMs:0,tokens:{entrada:0,saida:0},usd:0}],...(/acervo|abastec/i.test(texto)&&!royal?{agente:'monalisa' as const,agenteConfianca:1,agenteMotivo:'Pedido de abastecimento do acervo → Monalisa.',agenteRegra:true}:{agente:'van_gogh' as const,agenteConfianca:royal?1:.5,agenteMotivo:'Demanda de cliente → Van Gogh.',agenteRegra:royal}),provider:'mock',modelo:'jev-mock',latenciaMs:Math.round(performance.now()-started),tokens:{entrada:400,saida:50},custo:{usd,brl:usd*5.5,cotacaoUsdBrl:5.5},criadoEm:now()};
       usoJev={chamadas:usoJev.chamadas+1,tokensEntrada:usoJev.tokensEntrada+400,usd:usoJev.usd+usd,desde:usoJev.desde??now()};
       emit({type:'triagem.result',payload:triagem});
       return response({triagem});
@@ -154,6 +155,25 @@ export function createMockApi() {
       empresas=previous?empresas.map(e=>e.id===empresa.id?empresa:e):[...empresas,empresa];
       if(!previous)templates=[...templates,...seedTemplates(empresa.id).filter(t=>empresa.procedimentos.includes(t.procedimento))];
       return response({empresa},previous?200:201);
+    }
+    const refsMatch=path.match(/^\/api\/empresas\/([a-z0-9_]+)\/referencias(?:\/([a-z0-9_]+))?$/);
+    if(refsMatch) {
+      const found=empresas.find(e=>e.id===refsMatch[1]); if(!found)return error('Empresa não encontrada.',404,'NOT_FOUND');
+      const referencias=found.referencias ?? (found.id===marcaRoyal.id ? marcaRoyal.referencias : []);
+      if(!post && !put)return response({referencias});
+      const categoria=ReferenciaCategoriaSchema.safeParse(post?{procedimento:form?.get('procedimento'),composicao:form?.get('composicao')}:body);
+      if(!categoria.success)return error('Categoria inválida.',400,'VALIDATION_ERROR');
+      let next;
+      if(post) {
+        const file=form?.get('arquivo'); if(!(file instanceof File) || !['image/png','image/jpeg','image/webp'].includes(file.type) || !file.size || file.size>10*1024*1024)return error('Arquivo inválido.',400,'VALIDATION_ERROR');
+        const dataUrl=await new Promise<string>((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(reader.error);reader.readAsDataURL(file);});
+        next=[...referencias,{id:`ref_${crypto.randomUUID().replace(/-/g,'')}`,arquivo:dataUrl,...categoria.data,oferta:false,usarCopy:false,notas:''}];
+      } else {
+        if(!referencias.some(ref=>ref.id===refsMatch[2]))return error('Referência não encontrada.',404,'NOT_FOUND');
+        next=referencias.map(ref=>ref.id===refsMatch[2]?{...ref,...categoria.data}:ref);
+      }
+      empresas=empresas.map(e=>e.id===found.id?{...e,referencias:next}:e); if(found.id===marcaRoyal.id)marcaRoyal.referencias=next;
+      return response({referencias:next});
     }
     const empresaMatch=path.match(/^\/api\/empresas\/([a-z0-9_]+)(\/logo)?$/);
     if(empresaMatch) {

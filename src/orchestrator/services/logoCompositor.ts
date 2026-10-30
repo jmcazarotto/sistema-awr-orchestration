@@ -42,7 +42,7 @@ export async function removerMarcador(arte: Buffer): Promise<{ buffer: Buffer; b
   }
   if (total < 1500) return null;
   const box = { left: minX, top: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
-  if (total / (box.width * box.height) < 0.5) return null; // pixels espalhados ≠ retângulo
+  if (total / (box.width * box.height) < 0.5) throw new Error('A IA gerou marcadores de logo dispersos ou duplicados. A arte não será entregue com marcadores visíveis; solicite um ajuste com apenas um espaço de logo.');
   // Cor do entorno: anel de 8–28 px fora da caixa, ignorando magenta.
   let soma = [0, 0, 0], n = 0;
   for (let y = Math.max(0, minY - 28); y <= Math.min(H - 1, maxY + 28); y++) for (let x = Math.max(0, minX - 28); x <= Math.min(W - 1, maxX + 28); x++) {

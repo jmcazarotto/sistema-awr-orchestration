@@ -7,6 +7,11 @@ import { Empty, Icon, PageHeading } from '../components/ui';
 import { TemplateRenderer, empresaLogoUrl } from '../components/template/TemplateRenderer';
 
 const FAMILIAS: { id: FamiliaArte; label: string }[] = [{ id: 'antes_depois', label: 'Antes e depois' }, { id: 'banco_imagem', label: 'Banco de imagem' }];
+const proporcao = (largura: number, altura: number) => {
+  let a = largura, b = altura;
+  while (b) [a, b] = [b, a % b];
+  return `${largura / a}:${altura / a}`;
+};
 const go = (params: Record<string, string | undefined>) => {
   const q = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => !!e[1]));
   location.hash = `/templates${q.size ? `?${q}` : ''}`;
@@ -45,7 +50,8 @@ export function TemplatesPage({ query }: { query: URLSearchParams }) {
       : sorted.length === 0 ? <div style={{ marginTop: 20 }}><Empty>Nenhum template cadastrado para esta combinação.</Empty></div>
       : <div className="template-grid">{sorted.map(t => <article className="card template-card" key={t.id}>
         <div className="template-card-preview"><TemplateRenderer template={t} width={300} logoUrl={logo} labels /></div>
-        <div className="template-card-info"><div><h2>{t.nome}</h2><p className="muted">{PROCEDIMENTO_LABELS[t.procedimento]} · {t.elementos.length} elementos</p></div>
+        <div className="template-card-info"><div><h2>{t.nome}</h2><p className="muted">{PROCEDIMENTO_LABELS[t.procedimento]} · {t.elementos.length} elementos</p>
+          <p className="muted" style={{ marginTop: 6 }}><span title="Proporção">{proporcao(t.canvas.largura, t.canvas.altura)}</span> · <span title="Resolução">{t.canvas.largura} × {t.canvas.altura} px</span></p></div>
           <a className="button primary" href={`#/templates/${encodeURIComponent(t.id)}`} aria-label={`Editar ${t.nome}`}><Icon name="edit" size={16} />Editar</a></div>
       </article>)}</div>}
   </>;

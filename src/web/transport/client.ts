@@ -27,10 +27,11 @@ export function createApi(transport: typeof fetch = fetch) {
     return parsed.data;
   }
   return {
-    triagem: (texto: string) => request('/triagem', S.TriagemResponseSchema, S.TriagemRequestSchema.parse({texto})),
+    triagem: (texto: string, anexos: string[] = []) => request('/triagem', S.TriagemResponseSchema, S.TriagemRequestSchema.parse({texto, ...(anexos.length ? {anexos} : {})})),
     demandas: () => request('/demandas', S.ListDemandasResponseSchema),
     demanda: (id: string) => request(`/demandas/${encodeURIComponent(S.DemandaIdSchema.parse(id))}`, S.GetDemandaResponseSchema),
     create: (input: S.CreateDemandaRequest) => request('/demandas', S.CreateDemandaResponseSchema, S.CreateDemandaRequestSchema.parse(input)),
+    uploadAnexo: (arquivo: File, papel: S.PapelAnexo) => { const form = new FormData(); form.append('arquivo', arquivo); form.append('papel', papel); return request('/demandas/anexos', S.UploadAnexoResponseSchema, form); },
     feedback: (id: string, input: S.HumanReviewRequest) => request(`/demandas/${encodeURIComponent(S.DemandaIdSchema.parse(id))}/feedback`, S.HumanReviewResponseSchema, S.HumanReviewRequestSchema.parse(input)),
     resetHops: (id: string) => request(`/demandas/${encodeURIComponent(S.DemandaIdSchema.parse(id))}/reset-hops`, S.ResetHopsResponseSchema, {}),
     acervo: () => request('/acervo', S.GetAcervoResponseSchema),
@@ -50,6 +51,9 @@ export function createApi(transport: typeof fetch = fetch) {
     zerarIaUso: () => request('/ia/uso/zerar', S.IaUsoResponseSchema, {}),
     empresas: () => request('/empresas', S.ListEmpresasResponseSchema),
     empresa: (id: string) => request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}`, S.EmpresaResponseSchema),
+    referenciasEmpresa: (id: string) => request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}/referencias`, S.ReferenciasResponseSchema),
+    categorizarReferencia: (id: string, ref: string, procedimento: S.Procedimento, composicao: string) => request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}/referencias/${encodeURIComponent(ref)}`, S.ReferenciasResponseSchema, S.ReferenciaCategoriaSchema.parse({ procedimento, composicao }), 'PUT'),
+    uploadReferencia: (id: string, arquivo: File, procedimento: S.Procedimento, composicao: string) => { const form = new FormData(); form.append('arquivo', arquivo); form.append('procedimento', procedimento); form.append('composicao', composicao); return request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}/referencias`, S.ReferenciasResponseSchema, form); },
     saveEmpresa: (input: S.EmpresaInput) => request('/empresas', S.EmpresaResponseSchema, S.EmpresaInputSchema.parse(input)),
     uploadLogo: (id: string, arquivo: File | Blob, variante: S.LogoVariante = 'principal', principal = true) => { const form = new FormData(); form.append('arquivo', arquivo); form.append('variante', variante); form.append('principal', String(principal)); return request(`/empresas/${encodeURIComponent(S.EmpresaIdSchema.parse(id))}/logo`, S.EmpresaResponseSchema, form); },
     templates: (query: S.TemplatesQuery = {}) => { const params = new URLSearchParams(Object.entries(S.TemplatesQuerySchema.parse(query)).filter((e): e is [string, string] => typeof e[1] === 'string')).toString(); return request(`/templates${params ? `?${params}` : ''}`, S.ListTemplatesResponseSchema); },
@@ -58,4 +62,4 @@ export function createApi(transport: typeof fetch = fetch) {
   };
 }
 export type ApiClient = ReturnType<typeof createApi>;
-export function imageUrl(path: string) { return `/acervo/${path.split('/').map(encodeURIComponent).join('/')}`; }
+export function imageUrl(path: string) { return path.startsWith('data:image/') ? path : `/acervo/${path.split('/').map(encodeURIComponent).join('/')}`; }

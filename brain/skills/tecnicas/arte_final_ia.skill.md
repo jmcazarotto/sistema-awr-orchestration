@@ -8,7 +8,7 @@ atualizado_em: 2026-10-29
 ---
 # Técnica — Arte final completa por IA
 
-Método do **Van Gogh** para demandas de clientes: o modelo de imagem gera a **arte inteira** (fotografia, tipografia, cards, pills e bloco comercial) seguindo a skill da marca e as referências aprovadas. Não há camada SVG; a única etapa de composição posterior é a aplicação do **logo oficial** (PNG cadastrado em Empresas), porque a marca proíbe logo redesenhado por IA.
+Método do **Van Gogh** para demandas de clientes: o modelo de imagem gera a arte seguindo a skill da marca e as referências. O compositor aplica o logo oficial. Em antes/depois, a IA recebe as duas fotos reais e as referências na mesma edição e entrega as fotos já integradas aos quadros, com etiquetas. Monalisa usa o mesmo fluxo quando recebe um par de fotos reais. A instrução exige preservar o paciente, mas a edição generativa não garante pixels idênticos às fontes; conferir os detalhes antes de aprovar.
 
 ## 1. Objetivo
 
@@ -18,11 +18,13 @@ Entregar uma peça pronta para publicar, fiel à identidade da marca do cliente,
 
 1. **Contexto:** agente (SOUL + regras) + skill da marca (`marcas/<rede>/marca.skill.md`, §1–§4) + skill do procedimento (§1 compliance e disclaimer) + esta técnica.
 2. **Briefing → textos exatos:** preço/parcelamento, desconto, datas, contato e textos entre aspas são extraídos por regra e enviados como lista de strings literais. Sem oferta no briefing → instrução explícita de não desenhar bloco comercial.
-3. **Composição:** escolhida pelo tipo de arte (`banco_imagem_1` → `modelo_destaque`/`close_procedimento`; `banco_imagem_2` → `informativa_clean`). `antes_depois_*` exige fotos reais do cliente e não é gerado por IA.
-4. **Referências:** 2–3 imagens do índice da marca (mesmo procedimento e composição compatível; completa com `modelo_destaque`), enviadas como imagens de apoio, reduzidas para economizar tokens.
+3. **Composição:** escolhida pelo tipo de arte (`banco_imagem_1` → `modelo_destaque`/`close_procedimento`; `banco_imagem_2` → `informativa_clean`; `antes_depois_*` → `antes_depois_editorial`). Antes/depois exige um anexo `antes` e um `depois`, enviados sem redução como fontes à IA, separados das referências por manifesto numerado. A edição deve encaixar as fotos nos quadros, preenchendo as bordas sem faixas, deformação ou alteração do resultado clínico. Não há máscaras cyan/verde nem sobreposição posterior de fotos. Sem fotos, geração real é bloqueada.
+4. **Referências:** até 8 anexos `referencia` da demanda têm prioridade. O primeiro define a geometria: posição e proporção dos quadros, hierarquia do título, cantos, espaçamentos e posição da logo; os demais complementam. Não trocar essa geometria pelas sugestões genéricas da marca. Adaptar paleta, textos aprovados e disclaimer. Na ausência deles, usar 2–3 imagens do índice da marca. Referências são layout, nunca fonte de fotos de pacientes, textos, preços ou ofertas. Fotos `antes`/`depois` são fontes da composição final, não referências de inspiração.
 5. **Geração:** modelo de imagem das Configurações (Van Gogh), 4:5 (1088×1360 → arte final 1080×1350).
+   - Em antes/depois, uma análise de geometria com o modelo de visão configurado identifica as áreas fotográficas das referências; essas áreas são neutralizadas **antes** de enviar o layout ao gerador. Isso evita que o gerador reutilize o paciente da referência. As fontes reais continuam intactas e separadas. Nos ajustes com referência, não reenviar a versão anterior com pacientes possivelmente incorretos; reconstruir a partir do layout e das fontes. Sem referência, a versão anterior é neutralizada da mesma forma.
 6. **Logo:** a IA desenha um **marcador magenta** (#FF00FF, ~300×130 px) onde o logo deve ficar naquela composição; o sistema detecta o marcador, apaga-o com a cor do entorno e aplica o PNG oficial ali, centralizado e sem alterar pixels. Variante pela luminância do fundo (claro → logo para fundo claro; escuro → logo para fundo escuro). Sem marcador, usa a zona mais limpa (topo/rodapé × esquerda/centro/direita).
 7. **Revisão:** Diretor de Arte avalia rubrica do procedimento (R), da marca (M) e desta técnica (T).
+   - O revisor real recebe a arte, as fotos-fonte e as referências originais para comparação. Marcadores magenta dispersos/duplicados bloqueiam a entrega, em vez de passar à aprovação com caixas visíveis.
 
 ## 3. Regras de Geração
 
@@ -49,11 +51,12 @@ EXACT TEXTS (Portuguese, write them exactly, character by character, with correc
 {{oferta}}
 FOOTER DISCLAIMER (small, legible, exactly): "{{disclaimer}}"
 
-LOGO PLACEHOLDER: do not draw any logo. Instead, draw ONE solid flat pure magenta (#FF00FF) rectangle of about 300x130 px exactly where the brand logo should sit in this composition (usually the top area, inside the 64 px safe margin, over a calm background). Pure flat #FF00FF only: no text, no border, no shadow, no gradient, and nothing else magenta anywhere in the image. It will be replaced by the official logo file.
+LOGO PLACEHOLDER: do not draw any logo. Instead, draw ONE solid flat pure magenta (#FF00FF) rectangle of about 300x130 px at the layout reference's logo location, inside the 64 px safe margin, over a calm background. Without a layout reference, choose a balanced clear area. Pure flat #FF00FF only: no text, no border, no shadow, no gradient, and nothing else magenta anywhere in the image. It will be replaced by the official logo file.
 
-REFERENCES: the attached images are approved pieces of this brand. Follow their composition rhythm, spacing, typography contrast and color mood. Do not copy their faces, photos, texts, benefit lists or logo. Replace any navy blue from them with soft black/graphite. Ignore any price/installment block they show unless it is listed in EXACT TEXTS.
+REFERENCES: consult the numbered ATTACHMENT MANIFEST to distinguish layout references, real patient source photos and previous versions. Only images marked LAYOUT REFERENCE guide composition, spacing and typography. Do not copy patients, texts, benefit lists or logos from layout references. SOURCE BEFORE/AFTER photos must be included in the final composition, preserving the patient and clinical result. Replace any navy blue in layout graphics with soft black/graphite. Ignore reference price/installment blocks unless listed in EXACT TEXTS.
 {{referencias}}
 
+{{direcao_arte}}
 CLIENT BRIEFING (context only, do not write it verbatim): {{briefing_cliente}}
 {{feedback_ajuste}}
 {{aprendizados}}
@@ -66,6 +69,8 @@ CLIENT BRIEFING (context only, do not write it verbatim): {{briefing_cliente}}
 - [T03][critico] O disclaimer obrigatório está presente, legível e com o texto exato?
 - [T04][normal] Nenhum texto está cortado e todos respeitam a margem segura de 64 px?
 - [T05][normal] A arte está no formato 4:5 (1080 × 1350) e o logo oficial ficou em área limpa e legível?
+- [T06][critico] Quando há antes/depois, as fotos correspondem às fontes corretas, sem troca, retoque ou alteração perceptível do resultado clínico?
+- [T07][normal] Quando há referência explícita, a arte preserva a hierarquia e a geometria dos quadros, sem faixas vazias ou desalinhamento nas fotos?
 
 ## Self-Improvement Log
 

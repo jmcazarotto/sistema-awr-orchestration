@@ -206,13 +206,14 @@ Aprendizados ativos do Self-Improvement Log viram itens extras `[Lnn][critico]` 
 ### 6.3 `brain/skills/tecnicas/*.skill.md`
 
 - `template_composition` (Monalisa e modo Simulado): geometria dos 4 tipos de template (grid, safe-area, posições de headline/CTA/selo/logo), formatos (1080×1350 feed 4:5; 1080×1920 stories) e composição híbrida (Sharp/SVG + camada fotográfica).
-- `arte_final_ia` (Van Gogh com modelo real): a IA gera a arte completa. Mesmas seções numeradas; §4 traz o Prompt Base com `{{marca_prompt}}` `{{procedimento_label}}` `{{composicao}}` `{{procedimento_contexto}}` `{{textos_exatos}}` `{{oferta}}` `{{disclaimer}}` `{{referencias}}` `{{briefing_cliente}}` `{{feedback_ajuste}}` `{{aprendizados}}`; §5 rubrica `Tnn`. `antes_depois_*` não é gerado por IA (exige fotos reais).
+- `arte_final_ia` (Van Gogh com modelo real): a IA gera a arte completa. Mesmas seções numeradas; §4 traz o Prompt Base com `{{marca_prompt}}` `{{procedimento_label}}` `{{composicao}}` `{{procedimento_contexto}}` `{{textos_exatos}}` `{{oferta}}` `{{disclaimer}}` `{{referencias}}` `{{briefing_cliente}}` `{{feedback_ajuste}}` `{{aprendizados}}`; §5 rubrica `Tnn`. `antes_depois_*` exige fotos reais anexadas: a IA recebe o par e as referências em uma edição e entrega as fotos integradas ao layout.
 
 ### 6.4 `brain/skills/marcas/<rede>/`
 
 - `marca.skill.md` — front-matter (`id` = id da rede em `clientes.json`, `label`, `versao`, `atualizado_em`, `empresas`) e seções: `## 1. Identidade e Precedência`, `## 2. Regras Obrigatórias`, `## 3. Composições Aprovadas` (`### <composicao>`: `modelo_destaque`, `close_procedimento`, `informativa_clean`, `antes_depois_editorial`, `corporal`), `## 4. Diretrizes para Geração por IA` (bloco ```prompt), `## 5. Checklist de Rubrica da Marca` (`- [Mnn][critico|normal] Pergunta?`), `## Self-Improvement Log` (APPEND-ONLY).
 - `visual-system.md` — referência completa (paleta, tipografia, logo, ofertas), lida pelo revisor.
 - `referencias.md` — front-matter `raiz:` + tabela em `## Índice`: `| id | arquivo | procedimento | composicao | oferta | usar_copy | notas |`. Arquivos em `acervo/<raiz>/<arquivo>`. `usar_copy: nao` = só layout (copy fere compliance).
+- Referências são gerenciadas na aba Referências da empresa e categorizadas por procedimento e composição. O campo opcional `referencias` em `brain/clientes.json` passa a ser a fonte após a primeira alteração; enquanto ausente, o índice legado de `referencias.md` é usado. O BrainLoader e a geração usam a mesma lista, preservando os metadados legados; uploads novos são usados apenas como layout. As skills de procedimento exibem as referências correspondentes de todas as empresas.
 - Logos oficiais: PNG/SVG cadastrados em Empresas (`logos.claro` para fundo claro, `logos.escuro` para fundo escuro; `logo` principal como reserva), aplicados sem alterar pixels na zona mais limpa da arte.
 - A página `#/empresas/:id` permite configurar a empresa e sua `galeriaLogos`: lista de `{ arquivo, fundo: claro|escuro, principal: boolean }`. Uploads de variantes são aditivos e têm caminhos únicos. Múltiplas logos podem ser principais por fundo; o ImageEngine alterna entre as principais, ou entre todas quando nenhuma está marcada. `logos.claro/escuro` continuam como referência compatível (primeira principal ou primeira disponível); cadastros legados são preservados. Remover da galeria desvincula o arquivo sem apagá-lo do acervo.
 - Variações por peça (preço, parcelamento, nome, unidade) vêm **somente do briefing**; a marca não muda por unidade.
@@ -225,6 +226,15 @@ Aprendizados ativos do Self-Improvement Log viram itens extras `[Lnn][critico]` 
 ---
 
 ## 7. Nomenclatura no Acervo
+
+### Anexos de demanda
+
+- `POST /api/demandas/anexos`: multipart com `arquivo` (PNG/JPG/WebP, até 10 MB e 40 MP, não animado) e `papel` (`antes`, `depois` ou `referencia`). Retorna `{ anexo: { id, papel, nome, arquivo, largura, altura } }`. Conteúdo validado e orientação normalizada, sem filtros; armazenamento em `_demandas/<anx_id>/imagem.png` e `anexo.json`.
+- `POST /api/demandas` mantém JSON e aceita `anexos: [id, ...]`. O backend resolve IDs enviados previamente: máximo uma foto de antes, uma de depois e 8 referências. O par deve estar completo; sem template explícito, o par escolhe `antes_depois_1`. Caminhos livres e IDs inexistentes são recusados. Demandas antigas sem anexos continuam válidas.
+- `Demanda.anexos`, `PRODUZIR_ARTE.payload.anexos` e `AJUSTAR_ARTE.payload.anexos` carregam os descritores completos e persistidos. Ambos os criadores usam os mesmos arquivos em produção, ajustes e recuperação; não há comunicação direta entre atores.
+- Referências explícitas da demanda têm prioridade sobre sugestões genéricas de composição da marca. A primeira define geometria, hierarquia e posição da logo. Na geração real, antes/depois são enviados sem redução à IA, junto das referências e de um manifesto numerado que distingue fontes, layouts e versão anterior. A IA entrega as fotos já integradas aos quadros com etiquetas; não há máscaras cyan/verde nem sobreposição posterior das fotos. Só a logo oficial entra depois. A instrução exige preservar os pacientes, mas edição generativa não garante pixels idênticos; conferir fidelidade às fontes antes da aprovação. `ArteMeta.anexos` registra a origem; `ilustrativo=false` indica uso de par real, não preservação de pixels. `composicaoFotos` opcional distingue `ia_integrada` de `local` (simulado); versões antigas sem o campo continuam válidas.
+- Antes da edição de um comparativo, o modelo de visão configurado identifica regiões fotográficas nas referências e elas são neutralizadas na cópia enviada ao gerador, impedindo o reaproveitamento dos pacientes da referência. Originais armazenados não são alterados. Nos ajustes com referências, não reenviar a versão anterior; sem referência, neutralizar suas áreas fotográficas também. A revisão real recebe fontes e referências originais junto da arte. Marcadores de logo dispersos/duplicados interrompem a entrega.
+- Integrações externas seguem o mesmo fluxo de upload → criação JSON → `POST /api/demandas/:id/produzir` quando o Van Gogh aguarda produção manual. Anexos são persistentes e não são apagados ao remover um item do formulário ou ao aprovar a arte.
 
 | Local | Padrão | Exemplo |
 |---|---|---|
@@ -243,10 +253,27 @@ Cadastro em `brain/clientes.json` no formato **rede → unidades** (`tipo: franq
 Ordem de resolução (`EmpresaMatcher.ts` → `TriagemService.ts`):
 
 1. **Cadastro (determinístico, confiança 1):** o texto cita literalmente o nome/alias da rede (sem diferenciar acento/caixa; `RoyalFace` = `Royal Face`). A unidade é casada por nome, cidade ou alias. Unidade citada mas não cadastrada (ex.: "Royal Face Londrina") → rede reconhecida, `unidade.cadastrada=false`. Nesse caso a pergunta `empresa` **não** é enviada ao classificador.
-2. **Classificador (`metodo: ia`):** sem citação literal (erro de grafia), o Jev escolhe entre as redes cadastradas; aceito só com confiança ≥ 0,7.
+2. **Classificador (`metodo: ia`):** sem citação literal (erro de grafia), a classificadora (Luna ou Jev) escolhe entre as redes cadastradas; aceito só com confiança ≥ 0,7.
 3. **Extração (`metodo: extracao`, confiança 0,5):** nome próprio não cadastrado, exibido como "não cadastrada".
 
 Nunca associar uma unidade não citada a outra cadastrada (ex.: "Royal Face Maringá" jamais vira "Royal Face Castanhal").
+
+## 8.1. Etapas da Triagem e Briefing
+
+A triagem (`TriagemService.ts`) divide o pedido por tipo de trabalho. Cada etapa aparece em `triagem.etapas` com modelo, tokens e custo.
+
+| Etapa | Situação em Configurações | Responde |
+|---|---|---|
+| Regras (`briefingExtractor.ts`) | sem IA | Preço com valor exato, telefone, datas, empresa citada, agente com sinal claro, família antes/depois quando há fotos |
+| Leitura de texto (`briefingLeitura.ts`, Responses API) | `leitura_briefing` | Preço escrito de outro jeito, CTA, título, modelo da foto, descrição do antes e depois, referência, tom, público, restrições |
+| Classificadora (`DecisionsClient`/`JevClient`) | `triagem` | Empresa, procedimento, tipo de arte e agente, entre opções fechadas e com probabilidade |
+
+- Decisions API e Jev não geram texto. Valor, CTA e descrição nunca vêm deles.
+- `validarLeitura` descarta o que não está no pedido: `trecho` precisa ser literal; preço, CTA, título, texto e contato precisam existir no texto. Regras completam o que a IA deixou de fora (`mesclarBriefing`).
+- Só a Luna recebe os anexos, reduzidos a 768 px. Havendo antes e depois: o layout fica restrito às duas opções de antes e depois, e predicados geram `alertas` (região, enquadramento, papéis trocados). O modelo de texto recebe apenas papel e nome de cada anexo.
+- Falha na leitura não derruba a triagem: ela segue com regras + trechos na classificadora e um alerta. Falha na classificadora é 502.
+- `POST /api/demandas` com `triagemId` reaproveita a triagem conferida se texto e anexos forem os mesmos.
+- A demanda guarda `briefingItens`. O Van Gogh usa esses itens: textos exatos em `textosExatos` e direção de arte em `direcaoDeArte`. Em antes e depois, `modelo_foto` é ignorado e as descrições só ajudam a identificar as fotos reais, nunca alteram a imagem.
 
 ## 9. Roteamento do Agente de Arte na Triagem
 
@@ -257,4 +284,8 @@ A triagem também decide **quem produz** (`agente` → `classificacao.agenteDesi
 | `van_gogh` | Demanda de **cliente** (clínica, unidade, franqueado) | "recebemos uma demanda de cliente da unidade Royal Face Colombo…" |
 | `monalisa` | **Abastecimento rotineiro do acervo** (peças genéricas, sem cliente) | "precisamos abastecer o acervo de imagens de Botox" |
 
-Regra (`agenteRouting.ts`, confiança 1): só sinal de acervo (`acervo`, `abastecer`, `repor`, `completar a grade`…) → Monalisa; só sinal de cliente (empresa citada, `cliente`, `unidade`, `franqueado`…) → Van Gogh. Ambos ou nenhum → o Jev decide (pergunta `agente`).
+Regra (`agenteRouting.ts`, confiança 1): só sinal de acervo (`acervo`, `abastecer`, `repor`, `completar a grade`…) → Monalisa; só sinal de cliente (empresa citada, `cliente`, `unidade`, `franqueado`…) → Van Gogh. Ambos ou nenhum → a classificadora decide (pergunta `agente`).
+
+### Apresentação da revisão do Diretor
+
+`ReviewResult.modo` (`visual` ou `simulado`) identifica como a revisão foi feita; `ReviewItem.criterio` guarda a pergunta avaliada naquele momento. Ambos são opcionais para preservar versões antigas e são preenchidos pelo VisionReviewer, sem confiar no modelo para definir sua origem. Evidências visuais devem ser curtas, específicas e em linguagem de atendimento. A UI destaca resumo e pendências com instruções de ajuste; critérios atendidos ficam recolhidos. Revisões simuladas não representam aprovação visual, mesmo quando a imagem foi gerada na OpenAI. A regra de aprovação e os hops permanecem iguais.

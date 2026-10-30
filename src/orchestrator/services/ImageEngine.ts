@@ -14,6 +14,8 @@ import type { AcervoStorage, Clock } from '../core/interfaces';
 import type { BrainLoader } from '../brain/BrainLoader';
 import type { AiClient } from './AiClient';
 import { geometry } from './templateGeometry';
+import { INSTRUCOES_FOTOS_REAIS } from './fotosReais';
+import { referenciaSemPacientes } from './referenciaLayout';
 import type { Box } from './templateGeometry';
 
 export const metaPath = (path: string): string => path.replace(/\.png$/, '.meta.json');
@@ -61,7 +63,8 @@ export class ImageEngine {
     const real = escolhido.modelo !== 'simulado';
     if (real && !this.ai) throw new OrchestratorError('VALIDATION_ERROR', 'Geração real exige OPENAI_API_KEY no .env (ou escolha "Simulado" nas Configurações).', 400);
     // Van Gogh com modelo real: arte final completa por IA (técnica arte_final_ia), sem camada SVG.
-    if (real && this.ai && demanda.criadorAtual === 'van_gogh') return this.gerarArteFinal(demanda, versao, feedback, onEtapa, this.ai);
+    const fotosReais = demanda.anexos?.some(a => a.papel === 'antes') && demanda.anexos.some(a => a.papel === 'depois');
+    if (real && this.ai && (demanda.criadorAtual === 'van_gogh' || fotosReais)) return this.gerarArteFinal(demanda, versao, feedback, onEtapa, this.ai);
     await onEtapa('planejando', `Montando o prompt com a skill, o template e ${feedback ? 'o feedback do Diretor' : 'o briefing'}`);
     const { procedimento, tipoTemplate } = classification;
     const context = await this.brain.context(procedimento, tipoTemplate, demanda.clinicaNome);
@@ -81,8 +84,9 @@ export class ImageEngine {
       return value;
     };
     if (bannedTerms.some(term => demanda.briefing.toLowerCase().includes(term))) ajustesCompliance.push('O briefing contém termos proibidos pela Skill; a cópia foi limitada às alternativas permitidas.');
-    let headline = safe(demanda.headline ?? defaultHeadline, defaultHeadline);
-    let cta = safe(demanda.cta ?? defaultCta, defaultCta);
+    const doBriefing = textosExatos(demanda, defaultHeadline, defaultCta);
+    let headline = safe(doBriefing.titulo, defaultHeadline);
+    let cta = safe(doBriefing.cta, defaultCta);
     if (demanda.criadorAtual === 'monalisa') {
       const options = [defaultHeadline, 'Cuidado e naturalidade com avaliação individual', 'Informação e segurança para a sua escolha', 'Conheça o procedimento e suas indicações', 'Avaliação profissional para cuidar de você'];
       headline = options.find(value => !avoidedHeadlines.includes(value)) ?? `Cuidado individual: ${demanda.id}`;
@@ -108,18 +112,25 @@ export class ImageEngine {
     const promptUsado = agent.systemPrompt + '\n\n' + context.skill.promptBase.replace(/\{\{(\w+)\}\}/g, (_, key: string) => values[key] ?? '') + `\nMANDATORY: ONLY photographic layer. NO text, logo, seal or UI. Canvas geometry: ${JSON.stringify(geometry(tipoTemplate, this.config.IMAGE_SIZE === '1080x1920'))}`;
     let photo: Buffer | undefined;
     let imagem: ImagemGerada = { modelo: 'simulado', qualidade: null };
-    const references = (await this.storage.list('_references/')).filter(path => new RegExp(`^_references/${procedimento}__${tipoTemplate}\\.(png|jpg)$`).test(path));
+    const anexadas = demanda.anexos?.filter(a => a.papel === 'referencia').map(a => a.arquivo) ?? [];
+    const references = anexadas.length ? anexadas : (await this.storage.list('_references/')).filter(path => new RegExp(`^_references/${procedimento}__${tipoTemplate}\\.(png|jpg)$`).test(path));
     if (real && this.ai) {
-      const reference = feedback && demanda.stagingPath ? await this.storage.read(demanda.stagingPath) : references[0] ? await this.storage.read(references[0]) : undefined;
-      await onEtapa('gerando', `${iaModeloLabel(escolhido.modelo)}${escolhido.qualidade ? ` · qualidade ${escolhido.qualidade}` : ''}${reference ? ' · com imagem de referência' : ''}`);
-      const result = await this.ai.photo(promptUsado, reference, demanda.criadorAtual === 'monalisa' ? 'imagem_monalisa' : 'imagem_van_gogh');
+      const reference = await Promise.all([...(feedback && demanda.stagingPath ? [demanda.stagingPath] : []), ...references].map(path => this.storage.read(path)));
+      await onEtapa('gerando', `${iaModeloLabel(escolhido.modelo)}${escolhido.qualidade ? ` · qualidade ${escolhido.qualidade}` : ''}${reference.length ? ' · com imagem de referência' : ''}`);
+      const result = await this.ai.photo(promptUsado + (anexadas.length ? '\nUse all attached references as strong layout inspiration, never copy their text, prices or patients.' : ''), reference, demanda.criadorAtual === 'monalisa' ? 'imagem_monalisa' : 'imagem_van_gogh');
       photo = result.buffer; imagem = { modelo: result.modelo, qualidade: result.qualidade, custo: result.custo };
     } else await onEtapa('gerando', 'Simulado · camada ilustrativa local, sem custo');
     await onEtapa('compondo', 'Aplicando textos, logo, selo, CTA e disclaimer sobre a imagem');
     const palette = context.skill.palette; const background = procedimento === 'preenchimento_labial' ? '#FBF5F2' : procedimento === 'botox' ? '#EAF0F2' : '#E9DCC9';
     const svg: string[] = [rect({ x: 0, y: 0, w: 1080, h: height }, background)];
     const composites: OverlayOptions[] = [];
-    if (photo) {
+    if (fotosReais) {
+      for (const papel of ['antes', 'depois'] as const) {
+        const box = boxes[`photo_${papel}`]!;
+        const anexo = demanda.anexos!.find(a => a.papel === papel)!;
+        composites.push({ input: await sharp(await this.storage.read(anexo.arquivo)).resize(box.w, box.h, { fit: 'contain', background }).png().toBuffer(), left: box.x, top: box.y });
+      }
+    } else if (photo) {
       const full = await sharp(photo).resize(1080, height, { fit: 'fill' }).png().toBuffer();
       for (const [name, box] of Object.entries(boxes)) if (name.startsWith('photo_')) composites.push({ input: await sharp(full).extract({ left: box.x, top: box.y, width: box.w, height: box.h }).toBuffer(), left: box.x, top: box.y });
     } else {
@@ -143,7 +154,7 @@ export class ImageEngine {
     const path = `_staging/${demanda.id}__v${versao}.png`;
     const meta = ArteMetaSchema.parse({ demandaId: demanda.id, versao, procedimento, tipoTemplate, ator: demanda.criadorAtual, origem: demanda.origem,
       engine: photo ? 'openai' : 'mock', modeloImagem: imagem.modelo, promptUsado, textos: { headline, cta, disclaimer: context.skill.disclaimer },
-      aprendizadosAplicados: context.aprendizados.map(learning => learning.id), ajustesCompliance, ilustrativo: true, geradoEm: this.clock.now().toISOString(),
+      aprendizadosAplicados: context.aprendizados.map(learning => learning.id), ajustesCompliance, anexos: demanda.anexos, ilustrativo: !fotosReais, ...(fotosReais ? { composicaoFotos: 'local' } : {}), geradoEm: this.clock.now().toISOString(),
       ...(demanda.criadorAtual === 'monalisa' ? { coerenciaColecao: { referenciasConsideradas: [...collectionMetas.map(meta => `${procedimento}/${procedimento}__${meta.tipoTemplate}__${meta.demandaId}.png`), ...references], headlinesEvitadas: avoidedHeadlines } } : {}),
     });
     await this.storage.write(path, png); await this.storage.write(metaPath(path), Buffer.from(JSON.stringify(meta, null, 2)));
@@ -153,26 +164,52 @@ export class ImageEngine {
   /** Arte final por IA: marca + procedimento + técnica + referências → imagem completa → logo oficial aplicado. */
   private async gerarArteFinal(demanda: Demanda, versao: number, feedback: FeedbackDiretor | undefined, onEtapa: OnEtapa, ai: AiClient): Promise<{ path: string; meta: ArteMeta; imagem: ImagemGerada }> {
     const { procedimento, tipoTemplate } = demanda.classificacao!;
-    const composicao = composicaoPara(procedimento, tipoTemplate);
-    if (!composicao) throw new OrchestratorError('VALIDATION_ERROR', 'Antes e depois exige fotos reais do cliente: a arte final por IA não gera pacientes (CFM/Meta). Use banco de imagem ou envie as fotos.', 400);
+    const antes = demanda.anexos?.find(a => a.papel === 'antes');
+    const depois = demanda.anexos?.find(a => a.papel === 'depois');
+    const comparativo = tipoTemplate.startsWith('antes_depois');
+    if (comparativo && (!antes || !depois)) throw new OrchestratorError('VALIDATION_ERROR', 'Antes e depois exige as duas fotos reais do cliente. Envie as fotos na criação da demanda.', 400);
+    const composicao = comparativo ? 'antes_depois_editorial' : composicaoPara(procedimento, tipoTemplate)!;
     const { empresa, marca: marcaDetectada } = await this.brain.marcaDaDemanda(`${demanda.clinicaNome ?? ''} ${demanda.briefing}`);
     const context = await this.brain.context(procedimento, tipoTemplate, demanda.clinicaNome, { marcaId: marcaDetectada?.id ?? null });
     const { skill, marca, tecnica } = context;
     if (!tecnica) throw new Error('Skill de técnica arte_final_ia ausente');
-    const referencias = marca ? selecionarReferencias(marca.referencias, procedimento, composicao) : [];
+    const anexadas = demanda.anexos?.filter(a => a.papel === 'referencia') ?? [];
+    const referencias = anexadas.length
+      ? anexadas.map(a => ({ id: a.id, arquivo: a.arquivo, procedimento, composicao, oferta: false, usarCopy: false, notas: 'Referência explícita do briefing: inspiração visual prioritária.' }))
+      : selecionarReferencias(marca?.referencias ?? empresa?.referencias ?? [], procedimento, composicao);
     await onEtapa('planejando', `${marca ? `Marca ${marca.label}` : 'Sem skill de marca'} · composição ${composicao} · ${referencias.length} referência(s)${feedback ? ' · ajuste do Diretor' : ''}`);
     const ctaPadrao = /\*\*CTA\*\*[^\n]*?:\s*"([^"]+)"/.exec(skill.templates[tipoTemplate] ?? '')?.[1] ?? 'Agende sua avaliação';
     const textos = textosExatos(demanda, skill.label, ctaPadrao);
-    const agente = await this.brain.loadAgent('van_gogh');
-    const promptUsado = montarPrompt({ agente: agente.systemPrompt, tecnica, marca, skill, composicao, textos, referencias, briefing: demanda.briefing, feedback, aprendizados: context.aprendizados,
-      ocultar: empresa ? [empresa.nome, ...empresa.aliases, ...empresa.unidades.flatMap(u => [u.nome, ...u.aliases]), ...(demanda.clinicaNome ? [demanda.clinicaNome] : [])] : demanda.clinicaNome ? [demanda.clinicaNome] : [] });
-    // Referências reduzidas (menos tokens de imagem); em ajuste, a versão anterior vai primeiro para ser editada.
-    const reduzir = async (buffer: Buffer) => sharp(buffer).resize(640, 800, { fit: 'inside' }).jpeg({ quality: 82 }).toBuffer();
-    // Referência ausente no acervo não bloqueia a geração (o índice pode estar à frente dos arquivos).
-    const lidas = await Promise.all([...(feedback && demanda.stagingPath ? [demanda.stagingPath] : []), ...referencias.map(ref => ref.arquivo)].map(async path => { try { return await reduzir(await this.storage.read(path)); } catch { return null; } }));
-    const apoio = lidas.flatMap(buffer => (buffer ? [buffer] : []));
-    await onEtapa('gerando', `${iaModeloLabel(this.modeloImagem('van_gogh').modelo)} · arte completa${apoio.length ? ` · ${apoio.length} imagem(ns) de apoio` : ''}`);
-    const result = await ai.photo(promptUsado, apoio.length ? apoio : undefined, 'imagem_van_gogh');
+    const criador = demanda.criadorAtual!;
+    const agente = await this.brain.loadAgent(criador);
+    // Fotos-fonte primeiro e sem redução. O manifesto distingue pacientes, layouts e versão anterior.
+    const entradas: { buffer: Buffer; descricao: string }[] = [];
+    if (comparativo) {
+      entradas.push({ buffer: await this.storage.read(antes!.arquivo), descricao: 'SOURCE BEFORE / ANTES: use this actual patient photo in the BEFORE panel; never as a style reference.' });
+      entradas.push({ buffer: await this.storage.read(depois!.arquivo), descricao: 'SOURCE AFTER / DEPOIS: use this actual patient photo in the AFTER panel; never swap with BEFORE.' });
+    }
+    if (!comparativo && feedback && demanda.stagingPath) entradas.push({ buffer: await this.storage.read(demanda.stagingPath), descricao: 'PREVIOUS VERSION: apply the requested corrections; it is not the client layout reference.' });
+    for (const ref of referencias) {
+      let buffer: Buffer;
+      try {
+        buffer = await sharp(await this.storage.read(ref.arquivo)).resize(1080, 1350, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+      } catch (error) {
+        // Índices legados podem apontar arquivos removidos; referência explícita ausente é erro.
+        if (anexadas.some(a => a.arquivo === ref.arquivo)) throw error;
+        continue;
+      }
+      if (comparativo) buffer = await referenciaSemPacientes(buffer, ai, this.config.REVIEW_MODEL);
+      entradas.push({ buffer, descricao: `${anexadas.length ? 'CLIENT LAYOUT REFERENCE' : 'BRAND LAYOUT REFERENCE'} (${ref.id}): layout and typography only; never use the patient shown here or copy unapproved text/offers.` });
+    }
+    if (comparativo && feedback && demanda.stagingPath && !referencias.length) entradas.push({ buffer: await referenciaSemPacientes(await this.storage.read(demanda.stagingPath), ai, this.config.REVIEW_MODEL), descricao: 'PREVIOUS LAYOUT FOR CORRECTION: patient photographs removed; fill the panels using SOURCE BEFORE and SOURCE AFTER.' });
+    const promptUsado = montarPrompt({ agente: agente.systemPrompt, tecnica, marca, skill, composicao, textos, referencias, briefing: demanda.briefing, feedback, aprendizados: context.aprendizados, comparativo, ...(demanda.briefingItens ? { briefingItens: demanda.briefingItens } : {}),
+      ocultar: empresa ? [empresa.nome, ...empresa.aliases, ...empresa.unidades.flatMap(u => [u.nome, ...u.aliases]), ...(demanda.clinicaNome ? [demanda.clinicaNome] : [])] : demanda.clinicaNome ? [demanda.clinicaNome] : [] })
+      + (anexadas.length ? '\nUSER REFERENCES TAKE PRIORITY for geometry over generic brand composition suggestions. Treat the FIRST CLIENT LAYOUT REFERENCE as the layout blueprint: preserve its relative photo-panel bounds, joined/separate frames, corner shapes, spacing, title position/scale, typography hierarchy and logo location. Other client references are secondary details. Do not replace it with a generic ad or move a title below the photos to the top. Reserve the magenta logo marker at the reference logo location. Adapt only the approved copy, required disclaimer and brand palette. If an offer is absent from the briefing, remove its content while keeping the overall hierarchy and photo size. Explicit client briefing and adjustment instructions override this layout blueprint.' : '')
+      + (comparativo ? `\n${INSTRUCOES_FOTOS_REAIS}\nOriginal BEFORE photo: ${antes!.largura}x${antes!.altura}; AFTER: ${depois!.largura}x${depois!.altura}. ${tipoTemplate === 'antes_depois_2' ? 'Arrange BEFORE above AFTER.' : 'Arrange BEFORE left of AFTER.'}` : '')
+      + `\nATTACHMENT MANIFEST (image numbers match the attached files exactly):\n${entradas.map((entrada, i) => `IMAGE ${i + 1}: ${entrada.descricao}`).join('\n')}`;
+    const apoio = entradas.map(entrada => entrada.buffer);
+    await onEtapa('gerando', `${iaModeloLabel(this.modeloImagem(criador).modelo)} · ${comparativo ? 'arte completa com fotos de antes e depois' : 'arte completa'}${apoio.length ? ` · ${apoio.length} imagem(ns) de apoio` : ''}`);
+    const result = await ai.photo(promptUsado, apoio.length ? apoio : undefined, criador === 'monalisa' ? 'imagem_monalisa' : 'imagem_van_gogh');
     await onEtapa('compondo', 'Ajustando para 1080×1350 e aplicando o logo oficial da marca');
     const height = this.config.IMAGE_SIZE === '1080x1920' ? 1920 : 1350;
     let png: Buffer = await sharp(result.buffer).resize(1080, height, { fit: 'cover' }).png().toBuffer();
@@ -184,9 +221,10 @@ export class ImageEngine {
     if (!logo) ajustesCompliance.push(`Logo oficial não cadastrado para ${empresa?.nome ?? 'a empresa'}: cadastre os PNGs em Empresas (fundo claro/escuro).`);
     const arquivoLogo = logo ? (logo.variante === 'principal' ? empresa?.logo : empresa?.logos[logo.variante]) ?? '' : '';
     const path = `_staging/${demanda.id}__v${versao}.png`;
-    const meta = ArteMetaSchema.parse({ demandaId: demanda.id, versao, procedimento, tipoTemplate, ator: 'van_gogh', origem: demanda.origem,
+    const meta = ArteMetaSchema.parse({ demandaId: demanda.id, versao, procedimento, tipoTemplate, ator: criador, origem: demanda.origem,
       engine: 'openai', modeloImagem: result.modelo, promptUsado, textos: { headline: textos.titulo, cta: textos.cta, disclaimer: skill.disclaimer },
-      aprendizadosAplicados: context.aprendizados.map(learning => learning.id), ajustesCompliance, ilustrativo: true, geradoEm: this.clock.now().toISOString(),
+      aprendizadosAplicados: context.aprendizados.map(learning => learning.id), ajustesCompliance, anexos: demanda.anexos, ilustrativo: !comparativo, ...(comparativo ? { composicaoFotos: 'ia_integrada' } : {}), geradoEm: this.clock.now().toISOString(),
+      ...(criador === 'monalisa' ? { coerenciaColecao: { referenciasConsideradas: referencias.map(ref => ref.arquivo), headlinesEvitadas: [] } } : {}),
       arteFinal: { marca: marca?.id ?? null, composicao, referencias: referencias.map(ref => ref.arquivo), textosExatos: [textos.titulo, ...textos.literais, ...textos.oferta, textos.cta], logo: logo ? { posicao: logo.posicao, variante: logo.variante, arquivo: arquivoLogo } : null },
     });
     await this.storage.write(path, png); await this.storage.write(metaPath(path), Buffer.from(JSON.stringify(meta, null, 2)));

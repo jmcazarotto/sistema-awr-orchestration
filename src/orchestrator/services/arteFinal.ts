@@ -1,4 +1,4 @@
-import type { Demanda, FeedbackDiretor, Learning, Procedimento, ReferenciaMarca, TipoTemplate } from '../../shared/types';
+import type { BriefingItem, BriefingTipo, Demanda, FeedbackDiretor, Learning, Procedimento, ReferenciaMarca, TipoTemplate } from '../../shared/types';
 import type { LoadedMarca, LoadedSkill } from '../brain/BrainLoader';
 import { segmentar, tipoPorRegra } from './briefingExtractor';
 
@@ -17,7 +17,7 @@ export function composicaoPara(procedimento: Procedimento, tipoTemplate: TipoTem
 
 /** 2–3 referências: mesmo procedimento + composição; depois mesma composição; depois modelo_destaque. Nunca antes/depois. */
 export function selecionarReferencias(referencias: ReferenciaMarca[], procedimento: Procedimento, composicao: string, quantidade = 3): ReferenciaMarca[] {
-  const geraveis = referencias.filter(ref => ref.composicao !== 'antes_depois_editorial');
+  const geraveis = referencias.filter(ref => composicao === 'antes_depois_editorial' ? ref.composicao === composicao : ref.composicao !== 'antes_depois_editorial');
   const ordem = [
     (ref: ReferenciaMarca) => ref.procedimento === procedimento && ref.composicao === composicao,
     (ref: ReferenciaMarca) => ref.procedimento === procedimento,
@@ -38,9 +38,19 @@ export function extrairPrecos(trecho: string): string[] {
   const avista = [...trecho.matchAll(/R\$\s*(\d[\d.]*(?:,\d{2})?)/gi)].filter(m => !dentro(m.index!));
   return [...parcelados.map(m => `${m[1]}x de R$ ${m[2]}`), ...avista.map(m => `R$ ${m[1]}`)];
 }
-export function textosExatos(demanda: Pick<Demanda, 'briefing' | 'headline' | 'cta'>, procedimentoLabel: string, ctaPadrao: string): TextosArte {
-  const oferta: string[] = []; const literais: string[] = []; let ctaBriefing: string | undefined;
-  for (const trecho of segmentar(demanda.briefing)) {
+export function textosExatos(demanda: Pick<Demanda, 'briefing' | 'headline' | 'cta' | 'briefingItens'>, procedimentoLabel: string, ctaPadrao: string): TextosArte {
+  const oferta: string[] = []; const literais: string[] = []; let ctaBriefing: string | undefined; let tituloBriefing: string | undefined;
+  // Demandas novas usam o briefing conferido na triagem; as antigas caem nas regras sobre o texto.
+  if (demanda.briefingItens) {
+    const conteudo = (item: BriefingItem) => item.valor ?? item.texto;
+    for (const item of demanda.briefingItens) {
+      if (item.tipo === 'preco') oferta.push(item.valor ?? item.texto);
+      else if (item.tipo === 'promocao' && item.valor) oferta.push(item.valor);
+      else if (item.tipo === 'chamada_cta') ctaBriefing ??= conteudo(item);
+      else if (item.tipo === 'headline') tituloBriefing ??= conteudo(item);
+      else if (item.tipo === 'texto_literal' || (item.tipo === 'contato' && item.valor)) literais.push(conteudo(item));
+    }
+  } else for (const trecho of segmentar(demanda.briefing)) {
     const regra = tipoPorRegra(trecho);
     if (!regra) continue;
     if (regra.tipo === 'preco') oferta.push(...extrairPrecos(trecho));
@@ -50,7 +60,7 @@ export function textosExatos(demanda: Pick<Demanda, 'briefing' | 'headline' | 'c
   }
   // Parcelado antes do à vista (regra da marca).
   oferta.sort((a, b) => Number(/\dx /.test(b)) - Number(/\dx /.test(a)));
-  return { titulo: demanda.headline ?? procedimentoLabel, cta: demanda.cta ?? ctaBriefing ?? ctaPadrao, literais: [...new Set(literais)], oferta: [...new Set(oferta)] };
+  return { titulo: demanda.headline ?? tituloBriefing ?? procedimentoLabel, cta: demanda.cta ?? ctaBriefing ?? ctaPadrao, literais: [...new Set(literais)], oferta: [...new Set(oferta)] };
 }
 
 /** Promessa permitida + termos proibidos da skill do procedimento (§1), em forma compacta para o prompt. */
@@ -62,6 +72,7 @@ export function contextoProcedimento(skill: LoadedSkill): string {
 export interface PromptArteFinal {
   agente: string; tecnica: LoadedSkill; marca: LoadedMarca | null; skill: LoadedSkill; composicao: string;
   textos: TextosArte; referencias: ReferenciaMarca[]; briefing: string; feedback?: FeedbackDiretor; aprendizados: Learning[];
+  briefingItens?: BriefingItem[]; comparativo?: boolean;
   /** Nomes da empresa/unidades removidos do briefing (a IA não escreve marca; o logo oficial entra depois). */
   ocultar?: string[];
 }
@@ -74,6 +85,17 @@ export function ocultarNomes(texto: string, nomes: string[]): string {
     while (i >= 0) { resultado = `${resultado.slice(0, i)}a clínica${resultado.slice(i + nome.length)}`; i = fold(resultado).indexOf(alvo, i + 9); }
   }
   return resultado;
+}
+const ROTULOS_DIRECAO: Partial<Record<BriefingTipo, string>> = {
+  modelo_foto: 'PERSON TO SHOW', referencia_visual: 'WHAT TO TAKE FROM THE REFERENCES', tom_estilo: 'TONE AND STYLE', publico: 'TARGET AUDIENCE',
+  prazo_data: 'DATE OR CAMPAIGN CONTEXT', restricao: 'DO NOT', outro_briefing: 'NOTE', descricao_antes: 'CLIENT DESCRIPTION OF THE BEFORE PHOTO', descricao_depois: 'CLIENT DESCRIPTION OF THE AFTER PHOTO',
+};
+/** Direção de arte do briefing estruturado (o que não é texto escrito na peça). Em antes/depois as fotos reais mandam. */
+export function direcaoDeArte(itens: BriefingItem[], comparativo: boolean, ocultar: string[]): string {
+  const linhas = itens.filter(item => ROTULOS_DIRECAO[item.tipo] && !(comparativo && item.tipo === 'modelo_foto')).map(item => `- ${ROTULOS_DIRECAO[item.tipo]}: ${ocultarNomes(item.valor ?? item.texto, ocultar)}`);
+  if (!linhas.length) return '';
+  const fotos = comparativo ? ' Descriptions of the BEFORE and AFTER photos only help identify them: never alter a real photo to match a description.' : '';
+  return `ART DIRECTION FROM THE CLIENT (follow it; never write these lines on the art).${fotos}\n${linhas.join('\n')}`;
 }
 export function montarPrompt(input: PromptArteFinal): string {
   const { textos } = input;
@@ -89,7 +111,8 @@ export function montarPrompt(input: PromptArteFinal): string {
     procedimento_contexto: contextoProcedimento(input.skill), textos_exatos: lista, oferta, disclaimer: input.skill.disclaimer,
     referencias: input.referencias.length ? `Attached references: ${input.referencias.map(ref => `${ref.id} (${ref.composicao}${ref.usarCopy ? '' : ', layout only — never reuse its copy'})`).join('; ')}.` : 'No reference images attached.',
     briefing_cliente: ocultarNomes(input.briefing, input.ocultar ?? []).replace(/\s+/g, ' ').slice(0, 600),
-    feedback_ajuste: input.feedback ? `ADJUSTMENT REQUEST (the first attached image is the previous version: keep everything else, change only this): ${input.feedback.resumo} ${input.feedback.correcoes.map(item => `[${item.itemId}] ${item.instrucao}`).join(' ')}` : '',
+    direcao_arte: direcaoDeArte(input.briefingItens ?? [], input.comparativo ?? false, input.ocultar ?? []),
+    feedback_ajuste: input.feedback ? `ADJUSTMENT REQUEST (see ATTACHMENT MANIFEST for the previous version; preserve unaffected details, but rebuild the composition when requested): ${input.feedback.resumo} ${input.feedback.correcoes.map(item => `[${item.itemId}] ${item.instrucao}`).join(' ')}` : '',
     aprendizados: input.aprendizados.length ? `LEARNED RULES: ${input.aprendizados.map(learning => learning.regra).join(' | ')}` : '',
   };
   const corpo = input.tecnica.promptBase.replace(/\{\{(\w+)\}\}/g, (_, chave: string) => valores[chave] ?? '');

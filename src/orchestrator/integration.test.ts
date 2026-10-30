@@ -102,7 +102,7 @@ describe('integração headless em mock', () => {
       expect(meta.textos.headline).not.toBe(firstMeta.textos.headline); expect(meta.textos.cta).not.toBe(firstMeta.textos.cta);
       expect(meta.ator).toBe('monalisa');
       if (meta.ator === 'monalisa') expect(meta.coerenciaColecao.referenciasConsideradas).toContain(f.app.getDemanda(first.id)!.finalPath);
-      expect(second.clinicaNome).toBeUndefined(); expect(meta.promptUsado).toContain('CLINIC: \n');
+      expect(second.clinicaNome).toBeUndefined(); expect(meta.promptUsado).toMatch(/CLINIC: \r?\n/);
     } finally { await f.close(); }
   });
   it('extrai campos do briefing e registra substituição de texto proibido', async () => {

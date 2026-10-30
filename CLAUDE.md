@@ -35,15 +35,18 @@ Portabilidade Fase 2 (Cloudflare Workers + Durable Objects / VPS Hostinger): tod
 
 | Papel | Env | Default |
 |---|---|---|
-| Classificação rápida | `CLASSIFIER_MODEL` | `gpt-6-luna-decisions` |
+| Classificação (escolhas fechadas, Decisions API) | `CLASSIFIER_MODEL` | `gpt-6-luna-decisions` |
+| Leitura do briefing em texto livre (Responses API) | `BRIEFING_MODEL` | `gpt-6-luna` |
 | Geração de imagem | `IMAGE_MODEL` | `gpt-image-2` |
-| Rubrica visual (Sim/Não) | `REVIEW_MODEL` | `gpt-6-luna-decisions` |
+| Rubrica visual (Sim/Não com evidência) | `REVIEW_MODEL` | `gpt-6-luna` |
 | Feedback detalhado de correção | `FEEDBACK_MODEL` | `gpt-6.1-terra` |
 
 Modos (`.env`):
 - `IMAGE_ENGINE_MODE=mock|openai` — `mock` compõe o template com Sharp/SVG em ~1s (sem custo); `openai` chama `IMAGE_MODEL`.
 - `AI_MODE=mock|openai` — classificador e revisor. Em `mock` são heurísticos/determinísticos (com reprovação simulada configurável via `MOCK_REJECT_RATE`) para testar o loop de ajuste.
-- `CLASSIFIER_PROVIDER=openai|jev` — permite trocar para TypeSafe AI (`jev`) sem mudar o contrato de saída.
+- `CLASSIFIER_PROVIDER=openai|jev` — padrão da classificadora; a escolha em Configurações › Modelos de IA tem prioridade e troca Luna, Jev ou Simulado sem mudar o contrato de saída.
+
+`gpt-6-luna-decisions` é o id local do Luna na Decisions API: na chamada o modelo é `gpt-6-luna`. Decisions só escolhe entre opções, sem texto; o que precisa de texto usa a Responses API.
 
 Toda chamada de IA retorna dados **validados por Zod** antes de entrar no `EventBus`. Saída inválida = retry 1x, depois erro registrado no log SSE.
 

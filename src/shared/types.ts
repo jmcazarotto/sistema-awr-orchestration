@@ -75,7 +75,7 @@ export type Classificacao = z.infer<typeof ClassificacaoSchema>;
 export const FAMILIAS_ARTE = ['antes_depois', 'banco_imagem'] as const;
 export const FamiliaArteSchema = z.enum(FAMILIAS_ARTE);
 export type FamiliaArte = z.infer<typeof FamiliaArteSchema>;
-export const TriagemProviderSchema = z.enum(['jev', 'openai', 'mock']);
+export const TriagemProviderSchema = z.enum(['jev', 'openai_decisions', 'openai', 'mock']);
 export type TriagemProvider = z.infer<typeof TriagemProviderSchema>;
 export const TriagemEmpresaSchema = z.object({
   /** id do cliente em brain/clientes.json; null quando o texto cita uma empresa não cadastrada ou nenhuma. */
@@ -92,7 +92,7 @@ export const TriagemEmpresaSchema = z.object({
   metodo: z.enum(['cadastro', 'ia', 'extracao', 'nenhum']).default('nenhum'),
 });
 /** Informação do texto da demanda que vai para o agente criador como briefing da arte final. */
-export const BRIEFING_TIPOS = ['preco', 'promocao', 'chamada_cta', 'headline', 'texto_literal', 'tom_estilo', 'publico', 'prazo_data', 'data_entrega', 'contato', 'outro_briefing'] as const;
+export const BRIEFING_TIPOS = ['preco', 'promocao', 'chamada_cta', 'headline', 'texto_literal', 'modelo_foto', 'descricao_antes', 'descricao_depois', 'referencia_visual', 'tom_estilo', 'publico', 'restricao', 'prazo_data', 'data_entrega', 'contato', 'outro_briefing'] as const;
 export const BriefingTipoSchema = z.enum(BRIEFING_TIPOS);
 export type BriefingTipo = z.infer<typeof BriefingTipoSchema>;
 export const BriefingItemSchema = z.object({
@@ -102,9 +102,24 @@ export const BriefingItemSchema = z.object({
   /** Valor normalizado quando reconhecido (ex.: "6x de R$ 99,90"). */
   valor: z.string().min(1).optional(),
   confianca: z.number().min(0).max(1),
-  metodo: z.enum(['regra', 'ia', 'heuristica']),
+  /** regra = padrão inequívoco · leitura_ia = lido pelo modelo de texto · ia = classificadora (Decisions/Jev) · heuristica = simulado. */
+  metodo: z.enum(['regra', 'leitura_ia', 'ia', 'heuristica']),
 });
 export type BriefingItem = z.infer<typeof BriefingItemSchema>;
+
+/** Etapas da triagem: quem leu o quê, com custo próprio, para a UI mostrar a divisão texto × Decisions. */
+export const TriagemEtapaSchema = z.object({
+  id: z.enum(['regras', 'leitura_texto', 'decisoes']),
+  modelo: z.string().min(1),
+  status: z.enum(['ok', 'simulada', 'falhou']),
+  /** O que esta etapa respondeu (rótulos para a UI). */
+  campos: z.array(z.string().min(1)),
+  latenciaMs: z.number().nonnegative(),
+  tokens: z.object({ entrada: z.number().int().nonnegative(), saida: z.number().int().nonnegative() }),
+  usd: z.number().nonnegative(),
+  detalhe: z.string().optional(),
+});
+export type TriagemEtapa = z.infer<typeof TriagemEtapaSchema>;
 
 export const TriagemSchema = z.object({
   id: z.string().min(1),
@@ -125,6 +140,11 @@ export const TriagemSchema = z.object({
   /** Probabilidade de cada opção segundo o classificador (soma ≈ 1 por pergunta). Os campos *Confianca acima são a certeza do modelo na escolha. */
   /** Briefing da arte extraído do texto (vai para o Van Gogh/Monalisa). */
   briefing: z.array(BriefingItemSchema).default([]),
+  /** Anexos considerados nesta triagem; com o id, evitam reclassificar ao criar a demanda. */
+  anexos: z.array(z.string().min(1)).default([]),
+  etapas: z.array(TriagemEtapaSchema).default([]),
+  /** Pontos para o time conferir antes de criar a demanda (fotos faltando, papéis trocados…). */
+  alertas: z.array(z.string().min(1)).default([]),
   probabilidades: z.object({
     procedimento: z.record(z.string(), z.number().min(0).max(1)),
     tipoTemplate: z.record(z.string(), z.number().min(0).max(1)),
@@ -156,6 +176,7 @@ export const ReviewItemSchema = z.object({
   severidade: SeveridadeSchema,
   resposta: z.enum(['sim', 'nao']),
   evidencia: TextoSchema,
+  criterio: TextoSchema.optional(), // Texto do critério na data da revisão.
 });
 export type ReviewItem = z.infer<typeof ReviewItemSchema>;
 export const FeedbackDiretorSchema = z.object({
@@ -164,6 +185,7 @@ export const FeedbackDiretorSchema = z.object({
 });
 export type FeedbackDiretor = z.infer<typeof FeedbackDiretorSchema>;
 export const ReviewResultSchema = z.object({
+  modo: z.enum(['visual', 'simulado']).optional(), // Ausente em revisões antigas.
   aprovada: z.boolean(),
   score: z.number().min(0).max(1),
   itens: z.array(ReviewItemSchema).min(1),
@@ -187,11 +209,23 @@ const envelopeFields = {
 };
 export const DemandaClassificadaPayloadSchema = z.object({ classificacao: ClassificacaoSchema });
 export const PreencherAcervoPayloadSchema = z.object({ procedimento: ProcedimentoSchema, tipoTemplate: TipoTemplateSchema });
+export const PapelAnexoSchema = z.enum(['antes', 'depois', 'referencia']);
+export type PapelAnexo = z.infer<typeof PapelAnexoSchema>;
+export const AnexoIdSchema = z.string().regex(/^anx_[A-Za-z0-9_-]{21}$/);
+export const AnexoDemandaSchema = z.object({
+  id: AnexoIdSchema, papel: PapelAnexoSchema, nome: z.string().min(1).max(255),
+  arquivo: z.string().regex(/^_demandas\/anx_[A-Za-z0-9_-]{21}\/imagem\.png$/),
+  largura: z.number().int().positive(), altura: z.number().int().positive(),
+});
+export type AnexoDemanda = z.infer<typeof AnexoDemandaSchema>;
+export const UploadAnexoResponseSchema = z.object({ anexo: AnexoDemandaSchema });
 export const ProduzirArtePayloadSchema = z.object({
   procedimento: ProcedimentoSchema,
   tipoTemplate: TipoTemplateSchema,
   skillFile: TextoSchema,
   briefing: TextoSchema,
+  briefingItens: z.array(BriefingItemSchema).optional(),
+  anexos: z.array(AnexoDemandaSchema).max(10).optional(),
 });
 export const ArteEntreguePayloadSchema = z.object({
   stagingPath: TextoSchema,
@@ -200,6 +234,7 @@ export const ArteEntreguePayloadSchema = z.object({
   engine: EngineModeSchema,
 });
 export const AjustarArtePayloadSchema = z.object({
+  anexos: z.array(AnexoDemandaSchema).max(10).optional(),
   feedbackDiretor: FeedbackDiretorSchema,
   versaoAnterior: z.number().int().positive(),
 });
@@ -250,6 +285,9 @@ const arteMetaFields = {
   aprendizadosAplicados: z.array(z.string().regex(/^[LGC]\d{2,}$/)),
   ajustesCompliance: z.array(TextoSchema),
   ilustrativo: z.boolean().optional(),
+  /** Proveniência da montagem; ia_integrada não garante pixels idênticos às fontes. */
+  composicaoFotos: z.enum(['local', 'ia_integrada']).optional(),
+  anexos: z.array(AnexoDemandaSchema).optional(),
   /** Arte final por IA (Van Gogh): marca, composição, referências enviadas, textos exatos e onde o logo oficial entrou. */
   arteFinal: z.object({
     marca: z.string().nullable(), composicao: z.string(), referencias: z.array(z.string()), textosExatos: z.array(z.string()),
@@ -302,9 +340,12 @@ export const TransicaoDemandaSchema = z.object({
 });
 export type TransicaoDemanda = z.infer<typeof TransicaoDemandaSchema>;
 export const DemandaSchema = z.object({
+  anexos: z.array(AnexoDemandaSchema).max(10).optional(),
   id: DemandaIdSchema,
   origem: OrigemDemandaSchema,
   briefing: TextoSchema,
+  /** Briefing estruturado da triagem: é o que o Van Gogh usa; `briefing` guarda o texto original. */
+  briefingItens: z.array(BriefingItemSchema).optional(),
   clinicaNome: TextoSchema.optional(),
   headline: TextoSchema.optional(),
   cta: TextoSchema.optional(),
@@ -398,8 +439,10 @@ export const OrchestratorConfigSchema = z.object({
   /** Cotação usada para exibir custos em reais. */
   USD_BRL: z.number().positive().default(5.5),
   CLASSIFIER_MODEL: TextoSchema.default('gpt-6-luna-decisions'),
+  /** Leitura do briefing em texto livre (Responses API); as escolhas fechadas ficam com CLASSIFIER_MODEL. */
+  BRIEFING_MODEL: TextoSchema.default('gpt-6-luna'),
   IMAGE_MODEL: TextoSchema.default('gpt-image-2'),
-  REVIEW_MODEL: TextoSchema.default('gpt-6-luna-decisions'),
+  REVIEW_MODEL: TextoSchema.default('gpt-6-luna'),
   FEEDBACK_MODEL: TextoSchema.default('gpt-6.1-terra'),
   IMAGE_SIZE: z.enum(['1080x1350', '1080x1920']).default('1080x1350'),
   MAX_HOPS: ContadorSchema.default(5),
@@ -419,12 +462,15 @@ export type OrchestratorConfig = z.infer<typeof OrchestratorConfigSchema>;
 
 // HTTP: responses têm wrappers explícitos; o motor retorna os valores de domínio.
 export const SubmitDemandInputSchema = z.strictObject({
+  anexos: z.array(AnexoIdSchema).max(10).refine(ids => new Set(ids).size === ids.length, 'Anexos repetidos.').optional(),
   procedimento: ProcedimentoSchema.optional(),
   tipoTemplate: TipoTemplateSchema.optional(),
   briefing: TextoSchema,
   clinicaNome: TextoSchema.optional(),
   headline: TextoSchema.optional(),
   cta: TextoSchema.optional(),
+  /** Triagem já conferida na tela: reaproveitada para não cobrar a classificação duas vezes. */
+  triagemId: z.string().min(1).optional(),
 });
 export type SubmitDemandInput = z.infer<typeof SubmitDemandInputSchema>;
 export const CreateDemandaRequestSchema = SubmitDemandInputSchema;
@@ -445,7 +491,7 @@ export const HumanReviewResponseSchema = CreateDemandaResponseSchema;
 export type HumanReviewResponse = z.infer<typeof HumanReviewResponseSchema>;
 export const ResetHopsResponseSchema = CreateDemandaResponseSchema;
 export type ResetHopsResponse = z.infer<typeof ResetHopsResponseSchema>;
-export const TriagemRequestSchema = z.strictObject({ texto: z.string().trim().min(3).max(4000) });
+export const TriagemRequestSchema = z.strictObject({ texto: z.string().trim().min(3).max(4000), anexos: z.array(AnexoIdSchema).max(10).optional() });
 export type TriagemRequest = z.infer<typeof TriagemRequestSchema>;
 export const TriagemResponseSchema = z.object({ triagem: TriagemSchema });
 export type TriagemResponse = z.infer<typeof TriagemResponseSchema>;
@@ -507,6 +553,13 @@ export const UnidadeEmpresaSchema = z.object({
   uf: z.string().trim().length(2).optional(), aliases: z.array(z.string().trim().min(1)).default([]),
 });
 export type UnidadeEmpresa = z.infer<typeof UnidadeEmpresaSchema>;
+export const ReferenciaMarcaSchema = z.object({
+  id: z.string().regex(/^[a-z0-9_]+$/), arquivo: z.string().min(1), procedimento: z.string().min(1), composicao: z.string().min(1),
+  oferta: z.boolean(), usarCopy: z.boolean(), notas: z.string(),
+});
+export type ReferenciaMarca = z.infer<typeof ReferenciaMarcaSchema>;
+export const ReferenciasResponseSchema = z.object({ referencias: z.array(ReferenciaMarcaSchema) });
+export const ReferenciaCategoriaSchema = z.object({ procedimento: ProcedimentoSchema, composicao: z.enum(['modelo_destaque', 'close_procedimento', 'informativa_clean', 'antes_depois_editorial', 'corporal']) });
 /** Cliente AWR (rede/franquia ou independente). Fonte: brain/clientes.json. */
 export const EmpresaSchema = z.object({
   id: EmpresaIdSchema,
@@ -519,6 +572,8 @@ export const EmpresaSchema = z.object({
   /** Caminho público da logo (servido em /acervo/*), ex.: "_marcas/royal_face/logo.svg". */
   logo: z.string().min(1).nullable().default(null),
   galeriaLogos: z.array(z.object({ arquivo: z.string().min(1), fundo: z.enum(['claro', 'escuro']), principal: z.boolean() })).optional(),
+  /** Quando ausente, referências legadas vêm do índice da skill de marca. */
+  referencias: z.array(ReferenciaMarcaSchema).optional(),
   /** Variantes oficiais em PNG aplicadas na arte final: para fundo claro e para fundo escuro. */
   logos: z.object({ claro: z.string().min(1).nullable().default(null), escuro: z.string().min(1).nullable().default(null) }).default({ claro: null, escuro: null }),
   /** Paleta da marca (hex). */
@@ -526,7 +581,7 @@ export const EmpresaSchema = z.object({
     .default({ primaria: '#c9a45c', secundaria: '#3f3d3b', texto: '#ffffff' }),
 });
 export type Empresa = z.infer<typeof EmpresaSchema>;
-export const EmpresaInputSchema = EmpresaSchema.omit({ logo: true, logos: true }).extend({ logo: z.string().min(1).nullable().optional(), logos: EmpresaSchema.shape.logos.optional() });
+export const EmpresaInputSchema = EmpresaSchema.omit({ logo: true, logos: true, referencias: true }).extend({ logo: z.string().min(1).nullable().optional(), logos: EmpresaSchema.shape.logos.optional() });
 export const LOGO_VARIANTES = ['principal', 'claro', 'escuro'] as const;
 export const LogoVarianteSchema = z.enum(LOGO_VARIANTES);
 export type LogoVariante = z.infer<typeof LogoVarianteSchema>;
@@ -609,7 +664,7 @@ export interface EventBusPublic {
 /* ───────────── Modelos de IA e custos de integração ───────────── */
 
 /** Situações em que o sistema chama um modelo de IA (configuráveis na página Configurações). */
-export const IA_SITUACOES = ['triagem', 'rubrica', 'feedback', 'aprendizado', 'imagem_van_gogh', 'imagem_monalisa'] as const;
+export const IA_SITUACOES = ['triagem', 'leitura_briefing', 'rubrica', 'feedback', 'aprendizado', 'imagem_van_gogh', 'imagem_monalisa'] as const;
 export const IaSituacaoSchema = z.enum(IA_SITUACOES);
 export type IaSituacao = z.infer<typeof IaSituacaoSchema>;
 /** Nível de esforço (raciocínio) em PT-BR; mapeado para o valor da API em IA_EFFORT_API. */
@@ -632,14 +687,16 @@ export interface IaModeloCatalogo {
 }
 export const IA_CATALOGO: readonly IaModeloCatalogo[] = [
   { id: 'jev-latest', nome: 'Jev', versao: 'latest', provedor: 'jev', descricao: 'TypeSafe AI · escolhas com probabilidade calibrada', efforts: [], precoEntrada: 0.042, precoSaida: 0, tipo: 'texto' },
-  { id: 'gpt-6-luna-decisions', nome: 'Luna', versao: '6.0', provedor: 'openai_decisions', descricao: 'OpenAI Decisions API · Sim/Não e escolhas, aceita imagem', efforts: [], precoEntrada: 0.1, precoSaida: 0, tipo: 'texto' },
+  // Mesmo gpt-6-luna em dois endpoints: o id local separa preço e capacidade de cada um.
+  { id: 'gpt-6-luna-decisions', nome: 'Luna · Decisions API', versao: '6.0', provedor: 'openai_decisions', descricao: 'OpenAI Decisions API · só escolhas com probabilidade, aceita imagem, não escreve texto', efforts: [], precoEntrada: 0.1, precoSaida: 0, tipo: 'texto' },
+  { id: 'gpt-6-luna', nome: 'Luna · Texto', versao: '6.0', provedor: 'openai', descricao: 'OpenAI Responses API · lê e escreve texto estruturado', efforts: [], precoEntrada: 0.1, precoSaida: 0.5, tipo: 'texto' },
   { id: 'gpt-6.1-terra', nome: 'Terra', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · texto e feedback detalhado', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: null, precoSaida: null, tipo: 'texto' },
   { id: 'gpt-6.1-sol', nome: 'Codex Sol', versao: '6.1', provedor: 'openai', descricao: 'OpenAI · raciocínio profundo', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo', 'ultra'], precoEntrada: null, precoSaida: null, tipo: 'texto' },
   // Preços oficiais OpenAI (out/2026), por 1M tokens: texto US$ 5, imagem de entrada US$ 8, imagem gerada US$ 30.
   { id: 'gpt-image-2', nome: 'GPT Image', versao: '2.0', provedor: 'openai', descricao: 'OpenAI · camada fotográfica (esforço = qualidade)', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
   { id: 'gpt-image-2.5-flare', nome: 'GPT Image 2.5 Flare', versao: '2.5', provedor: 'openai', descricao: 'OpenAI · rápido, alta qualidade no dia a dia', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
   { id: 'gpt-image-2.5-sunburst', nome: 'GPT Image 2.5 Sunburst', versao: '2.5', provedor: 'openai', descricao: 'OpenAI · GPT Image 2.5 Sunburst', efforts: ['baixo', 'medio', 'alto', 'muito_alto', 'maximo'], precoEntrada: 5, precoSaida: 30, precoImagemEntrada: 8, tipo: 'imagem' },
-  { id: 'simulado', nome: 'Simulado', versao: 'local', provedor: 'local', descricao: 'Sharp/SVG no servidor · sem chamada à OpenAI, sem custo', efforts: [], precoEntrada: 0, precoSaida: 0, tipo: 'imagem' },
+  { id: 'simulado', nome: 'Simulado', versao: 'local', provedor: 'local', descricao: 'Local no servidor · sem chamada de IA, sem custo', efforts: [], precoEntrada: 0, precoSaida: 0, tipo: 'imagem' },
 ];
 export const iaModelo = (id: string) => IA_CATALOGO.find(modelo => modelo.id === id);
 export const iaModeloLabel = (id: string) => { const m = iaModelo(id); return m ? (m.nome.includes(m.versao) || m.provedor === 'local' ? m.nome : `${m.nome} ${m.versao}`) : id; };
@@ -647,9 +704,10 @@ export const IMAGEM_MODELOS = ['simulado', 'gpt-image-2', 'gpt-image-2.5-flare',
 
 export interface IaSituacaoInfo { label: string; agente: string; descricao: string; modelos: readonly string[] }
 export const IA_SITUACAO_INFO: Record<IaSituacao, IaSituacaoInfo> = {
-  triagem: { label: 'Classificação/triagem da demanda', agente: 'Diretor de Arte', descricao: 'Empresa, procedimento, tipo de arte, agente e briefing.', modelos: ['jev-latest'] },
-  rubrica: { label: 'Revisão visual (rubrica Sim/Não)', agente: 'Diretor de Arte', descricao: 'Avalia cada item da rubrica olhando a arte.', modelos: ['gpt-6-luna-decisions', 'gpt-6.1-terra', 'gpt-6.1-sol'] },
-  feedback: { label: 'Feedback de correção', agente: 'Diretor de Arte', descricao: 'Redige o que corrigir quando a arte é reprovada.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna-decisions'] },
+  triagem: { label: 'Classificadora da demanda', agente: 'Diretor de Arte', descricao: 'Escolhas fechadas: empresa, procedimento, tipo de arte e agente. A Luna também olha os anexos.', modelos: ['gpt-6-luna-decisions', 'jev-latest', 'simulado'] },
+  leitura_briefing: { label: 'Leitura do briefing', agente: 'Diretor de Arte', descricao: 'Lê o texto e separa preço, CTA, modelo da foto, antes/depois, tom e restrições para o Van Gogh.', modelos: ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol', 'simulado'] },
+  rubrica: { label: 'Revisão visual (rubrica Sim/Não)', agente: 'Diretor de Arte', descricao: 'Avalia cada item da rubrica olhando a arte e escreve a evidência.', modelos: ['gpt-6-luna', 'gpt-6.1-terra', 'gpt-6.1-sol'] },
+  feedback: { label: 'Feedback de correção', agente: 'Diretor de Arte', descricao: 'Redige o que corrigir quando a arte é reprovada.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol', 'gpt-6-luna'] },
   aprendizado: { label: 'Aprendizado do Cérebro', agente: 'Cérebro (Skills)', descricao: 'Transforma o motivo da reprovação humana em regra da skill.', modelos: ['gpt-6.1-terra', 'gpt-6.1-sol'] },
   imagem_van_gogh: { label: 'Geração de imagem · demandas de clientes', agente: 'Van Gogh', descricao: 'Camada fotográfica das artes pedidas por clientes.', modelos: IMAGEM_MODELOS },
   imagem_monalisa: { label: 'Geração de imagem · acervo', agente: 'Monalisa', descricao: 'Camada fotográfica das artes de abastecimento do acervo.', modelos: IMAGEM_MODELOS },
@@ -685,11 +743,6 @@ export type IaUsoResponse = z.infer<typeof IaUsoResponseSchema>;
 
 /* ───────────── Skills de marca (brain/skills/marcas/<rede>/) ───────────── */
 export const COMPOSICOES = ['modelo_destaque', 'close_procedimento', 'informativa_clean', 'antes_depois_editorial', 'corporal'] as const;
-export const ReferenciaMarcaSchema = z.object({
-  id: z.string().regex(/^[a-z0-9_]+$/), arquivo: z.string().min(1), procedimento: z.string().min(1), composicao: z.string().min(1),
-  oferta: z.boolean(), usarCopy: z.boolean(), notas: z.string(),
-});
-export type ReferenciaMarca = z.infer<typeof ReferenciaMarcaSchema>;
 export const MarcaSkillSchema = z.object({
   id: z.string().regex(/^[a-z0-9_]+$/), label: TextoSchema, versao: z.number().int().positive(), atualizadoEm: z.string(),
   empresas: z.array(z.string()), skillFile: TextoSchema, conteudo: z.string(), visualSystem: z.string(),
@@ -701,11 +754,12 @@ export const ListMarcasResponseSchema = z.object({ marcas: z.array(MarcaSkillSch
 export const MarcaResponseSchema = z.object({ marca: MarcaSkillSchema });
 
 export interface Orchestrator {
+  uploadAnexo(arquivo: { nome: string; dados: Buffer }, papel: PapelAnexo): Promise<AnexoDemanda>;
   readonly bus: EventBusPublic;
   submitDemand(input: SubmitDemandInput): Promise<Demanda>;
   humanReview(demandaId: string, feedback: FeedbackHumano): Promise<Demanda>;
   /** Triagem de texto livre (empresa/procedimento/tipo de arte). NÃO cria demanda nem inicia produção. */
-  triar(texto: string): Promise<Triagem>;
+  triar(texto: string, anexos?: string[]): Promise<Triagem>;
   readonly acervo: {
     grid(): Promise<AcervoGrid>;
     fill(procedimento?: Procedimento, tipoTemplate?: TipoTemplate): Promise<void>;
@@ -722,6 +776,9 @@ export interface Orchestrator {
     upsert(input: EmpresaInput): Promise<Empresa>;
     /** variante: 'principal' (ícone/cadastro), 'claro' (logo para fundo claro) ou 'escuro' (logo para fundo escuro) — as duas últimas entram na arte final. */
     setLogo(id: string, arquivo: { nome: string; dados: Buffer }, variante?: LogoVariante, principal?: boolean): Promise<Empresa>;
+    referencias(id: string): Promise<ReferenciaMarca[]>;
+    adicionarReferencia(id: string, arquivo: { nome: string; dados: Buffer }, procedimento: Procedimento, composicao: string): Promise<ReferenciaMarca[]>;
+    categorizarReferencia(id: string, referenciaId: string, procedimento: Procedimento, composicao: string): Promise<ReferenciaMarca[]>;
   };
   readonly templates: {
     list(filtro?: TemplatesQuery): Promise<TemplateArte[]>;

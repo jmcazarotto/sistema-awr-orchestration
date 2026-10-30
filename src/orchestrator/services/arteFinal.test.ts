@@ -77,6 +77,11 @@ describe('nome da marca fora do prompt', () => {
 });
 
 describe('marcador magenta do logo', () => {
+  it('bloqueia entrega quando a IA cria dois marcadores separados', async () => {
+    const { prepararLogo } = await import('./logoCompositor');
+    const arte = await sharp(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="1080" height="1350"><rect width="1080" height="1350" fill="#eee"/><rect x="400" y="70" width="300" height="130" fill="#ff00ff"/><rect x="750" y="1100" width="250" height="130" fill="#ff00ff"/></svg>')).png().toBuffer();
+    await expect(prepararLogo(arte, {})).rejects.toThrow('marcadores');
+  });
   it('logo vai exatamente no marcador desenhado pela IA, e o magenta some mesmo sem logo cadastrado', async () => {
     const { prepararLogo } = await import('./logoCompositor');
     const marcador = await sharp({ create: { width: 300, height: 130, channels: 3, background: '#FF00FF' } }).png().toBuffer();

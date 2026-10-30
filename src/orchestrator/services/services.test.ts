@@ -20,10 +20,10 @@ describe('serviços', () => {
     const a = seededRng('a'); const b = seededRng('a'); expect([a(), a(), a()]).toEqual([b(), b(), b()]);
   });
   it('classificador usa heurísticas PT-BR e mantém restrições explícitas', async () => {
-    const classifier = new FastClassifier(OrchestratorConfigSchema.parse({}));
+    const classifier = new FastClassifier();
     expect(await classifier.classify({ briefing: 'Botox antes e depois empilhado' })).toMatchObject({ procedimento: 'botox', tipoTemplate: 'antes_depois_2', agenteDesignado: 'van_gogh' });
     expect(await classifier.classify({ briefing: 'Botox antes e depois', procedimento: 'fios_sustentacao', tipoTemplate: 'banco_imagem_2' })).toMatchObject({ procedimento: 'fios_sustentacao', tipoTemplate: 'banco_imagem_2' });
-    expect(await new FastClassifier(OrchestratorConfigSchema.parse({ CLASSIFIER_PROVIDER: 'jev' })).classify({ briefing: 'Botox' })).toMatchObject({ procedimento: 'botox' });
+    expect(await new FastClassifier().classify({ briefing: 'Botox' })).toMatchObject({ procedimento: 'botox' });
     const start = performance.now(); await classifier.classify({ briefing: 'Botox' }); expect(performance.now() - start).toBeLessThan(150);
   });
   it('geometria hardcoded coincide com todas as linhas do Markdown real', async () => {

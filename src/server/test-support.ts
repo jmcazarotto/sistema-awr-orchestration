@@ -1,4 +1,6 @@
 import { ClientesRegistry } from '../orchestrator/brain/ClientesRegistry';
+import { DemandaAnexos } from '../orchestrator/services/DemandaAnexos';
+import { FsAcervoStorage } from '../orchestrator/core/FsAcervoStorage';
 import { MemoryTemplateStore } from '../orchestrator/core/MemoryTemplateStore';
 import { seedTemplates } from '../orchestrator/templates/seeds';
 import { OrchestratorError } from '../orchestrator/core/errors';
@@ -56,6 +58,8 @@ export class FakeBus implements EventBusPublic {
 }
 
 export class FakeOrchestrator implements Orchestrator {
+  private anexosStore() { return new DemandaAnexos(new FsAcervoStorage(this.config.ACERVO_DIR)); }
+  readonly uploadAnexo: Orchestrator['uploadAnexo'] = (arquivo, papel) => this.anexosStore().upload(arquivo, papel);
   readonly config: OrchestratorConfig;
   readonly bus = new FakeBus();
   demandas: Demanda[] = [criarDemanda()];
@@ -68,6 +72,9 @@ export class FakeOrchestrator implements Orchestrator {
   private readonly templateStore = new MemoryTemplateStore();
   private registry(): ClientesRegistry { return new ClientesRegistry(this.config.BRAIN_DIR); }
   readonly empresas: Orchestrator['empresas'] = {
+    referencias: async id => (await this.registry().list()).find(e => e.id === id)?.referencias ?? [],
+    adicionarReferencia: async () => [],
+    categorizarReferencia: async () => [],
     list: () => this.registry().list(),
     get: async id => (await this.registry().list()).find(empresa => empresa.id === id),
     upsert: async input => { const empresa = await this.registry().upsert(input); await seedTemplates(this.templateStore, [empresa], agora); return empresa; },
@@ -102,13 +109,13 @@ export class FakeOrchestrator implements Orchestrator {
   };
   constructor(config = OrchestratorConfigSchema.parse({})) { this.config = config; }
   readonly submitDemand = vi.fn(async (input: SubmitDemandInput): Promise<Demanda> => {
-    const demanda = criarDemanda({ id: 'DEM-0002', estado: 'CLASSIFICADA', ...input });
+    const demanda = criarDemanda({ id: 'DEM-0002', estado: 'CLASSIFICADA', ...input, anexos: await this.anexosStore().resolve(input.anexos) });
     this.demandas.push(demanda);
     return demanda;
   });
   readonly triar = vi.fn(async (texto: string): Promise<Triagem> => ({
     id: 'TRI-test', texto, empresa: { id: null, nome: null, cadastrada: false, confianca: 0, rede: null, unidade: null, metodo: 'nenhum' },
-    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste', agenteRegra: true, briefing: [],
+    procedimento: 'botox', procedimentoConfianca: 0.95, tipoTemplate: 'antes_depois_1', familiaArte: 'antes_depois', anexos: [], etapas: [], alertas: [], tipoTemplateConfianca: 0.95, agente: 'van_gogh', agenteConfianca: 1, agenteMotivo: 'teste', agenteRegra: true, briefing: [],
     provider: 'mock', modelo: 'heuristica', latenciaMs: 1, tokens: { entrada: 0, saida: 0 }, custo: { usd: 0, brl: 0, cotacaoUsdBrl: 5.5 }, criadoEm: agora,
   }));
   readonly humanReview = vi.fn(async (id: string, feedback: FeedbackHumano): Promise<Demanda> => {

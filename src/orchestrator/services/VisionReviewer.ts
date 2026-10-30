@@ -1,5 +1,6 @@
 import sharp from 'sharp';
-import { ArteMetaSchema, FeedbackDiretorSchema, ReviewResultSchema } from '../../shared/types';
+import { z } from 'zod';
+import { ArteMetaSchema, FeedbackDiretorSchema, ReviewItemSchema, ReviewResultSchema } from '../../shared/types';
 import type { Demanda, OrchestratorConfig, ReviewItem, ReviewResult, RubricaItem } from '../../shared/types';
 import type { AcervoStorage } from '../core/interfaces';
 import type { BrainLoader } from '../brain/BrainLoader';
@@ -26,17 +27,27 @@ export class VisionReviewer {
     const context = await this.brain.context(procedimento, tipoTemplate, demanda.clinicaNome, meta.arteFinal ? { marcaId: meta.arteFinal.marca } : undefined);
     const photo = await this.storage.read(path);
     let itens: ReviewItem[];
+    let resumoVisual = '';
     if (this.config.AI_MODE === 'openai') {
       if (!this.ai) throw new Error('VisionReviewer OpenAI não configurado');
       const agent = await this.brain.loadAgent('art_director');
-      const validatedSchema = ReviewResultSchema.superRefine((result, ctx) => {
+      const imagens = [photo];
+      const manifesto = ['Imagem 1: arte final a avaliar.'];
+      if (meta.composicaoFotos === 'ia_integrada') {
+        for (const anexo of meta.anexos ?? []) {
+          imagens.push(await sharp(await this.storage.read(anexo.arquivo)).resize(1080, 1350, { fit: 'inside', withoutEnlargement: true }).png().toBuffer());
+          manifesto.push(`Imagem ${imagens.length}: ${anexo.papel === 'referencia' ? 'referência de layout; comparar geometria e hierarquia' : `foto original de ${anexo.papel}; comparar anatomia e resultado, sem troca ou retoque`}.`);
+        }
+      }
+      const validatedSchema = ReviewResultSchema.omit({ modo: true }).extend({ itens: z.array(ReviewItemSchema.omit({ criterio: true })).min(1) }).superRefine((result, ctx) => {
         if (result.itens.length !== context.rubrica.length || new Set(result.itens.map(item => item.id)).size !== context.rubrica.length || context.rubrica.some(item => !result.itens.some(value => value.id === item.id && value.severidade === item.severidade))) ctx.addIssue({ code: 'custom', message: 'Responder exatamente uma vez a cada item da rubrica' });
       });
-      const result = await this.ai.json(this.ai.alvo('rubrica', this.config.REVIEW_MODEL), validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, ...(meta.arteFinal ? { marca: context.marca?.conteudo ?? null, tecnica: context.tecnica?.conteudo, textosExatosDoBriefing: meta.arteFinal.textosExatos, disclaimer: meta.textos.disclaimer } : { composicao: context.composition.conteudo }), skill: context.skill.conteudo, template: tipoTemplate, instrucoes: 'Avalie cada item com sim/nao e evidência visual. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), photo);
+      const result = await this.ai.json(this.ai.alvo('rubrica', this.config.REVIEW_MODEL), validatedSchema, agent.systemPrompt, JSON.stringify({ rubrica: context.rubrica, ...(meta.arteFinal ? { marca: context.marca?.conteudo ?? null, tecnica: context.tecnica?.conteudo, textosExatosDoBriefing: meta.arteFinal.textosExatos, disclaimer: meta.textos.disclaimer } : { composicao: context.composition.conteudo }), skill: context.skill.conteudo, template: tipoTemplate, imagens: manifesto, instrucoes: 'Avalie cada item com sim/nao e evidência visual específica em uma frase curta: diga qual elemento observou e onde está na arte. Não repita justificativas genéricas, não descreva ferramentas de produção (SVG, mock, Skill) e não invente verificações. Use português simples para o time de atendimento. Em feedback.resumo, sintetize o resultado em até duas frases, com os principais acertos e a prioridade de ajuste, se houver. Compare as fotos com as fontes quando fornecidas; não afirme fidelidade apenas porque há um par de fotos. Score é proporção de itens sim. Feedback cita IDs reprovados, até três correções executáveis.' }), imagens.length > 1 ? imagens : photo);
       itens = result.itens;
+      resumoVisual = result.feedback.resumo;
     } else {
       const metadata = await sharp(photo).metadata();
-      itens = context.rubrica.map(item => ({ id: item.id, severidade: item.severidade, resposta: 'sim', evidencia: 'Composição mock gerada por SVG com geometria e textos da Skill; fotografia ilustrativa.' }));
+      itens = context.rubrica.map(item => ({ id: item.id, severidade: item.severidade, resposta: 'sim', evidencia: 'Critério não verificado visualmente nesta simulação.' }));
       const fail = (id: string, evidencia: string) => { const item = itens.find(value => value.id === id); if (item) { item.resposta = 'nao'; item.evidencia = evidencia; } };
       if (meta.textos.disclaimer !== context.skill.disclaimer) fail('R01', 'Disclaimer obrigatório ausente ou alterado.');
       if (metadata.width !== 1080 || metadata.height !== (this.config.IMAGE_SIZE === '1080x1920' ? 1920 : 1350)) fail('R06', 'Dimensão da arte incompatível com o template.');
@@ -50,17 +61,18 @@ export class VisionReviewer {
         if (rng() < 0.5) { const second = candidates.find(item => item.id !== first?.id); if (second) fail(second.id, `Defeito simulado adicional: ${second.pergunta}`); }
       }
     }
+    itens = itens.map(item => ({ ...item, criterio: context.rubrica.find(value => value.id === item.id)!.pergunta }));
     const failed = itens.filter(item => item.resposta === 'nao').sort((a, b) => Number(b.severidade === 'critico') - Number(a.severidade === 'critico'));
-    let feedback = { resumo: failed.length ? `Corrigir ${failed.map(item => item.id).join(', ')}.` : 'Rubrica aprovada.', correcoes: failed.slice(0, 3).map(item => ({ itemId: item.id, instrucao: instruction(context.rubrica.find(value => value.id === item.id)!) })) };
+    let feedback = { resumo: this.config.AI_MODE === 'openai' ? (resumoVisual || (failed.length ? `${failed.length} ponto(s) precisam de atenção.` : 'Nenhum ajuste apontado na análise visual.')) : 'Revisão simulada: apenas o texto obrigatório nos metadados e as dimensões do arquivo foram conferidos. Composição, legibilidade e fotos precisam de conferência humana.', correcoes: failed.slice(0, 3).map(item => ({ itemId: item.id, instrucao: instruction(context.rubrica.find(value => value.id === item.id)!) })) };
     if (failed.length && this.config.AI_MODE === 'openai' && this.ai) {
       const schema = FeedbackDiretorSchema.superRefine((result, ctx) => { if (result.correcoes.length === 0 || result.correcoes.some(item => !failed.some(value => value.id === item.itemId))) ctx.addIssue({ code: 'custom', message: 'Correções devem citar apenas IDs reprovados' }); });
-      feedback = await this.ai.json(this.ai.alvo('feedback', this.config.FEEDBACK_MODEL), schema, 'Redija feedback PT-BR executável: o quê, onde e como. Máximo três correções, críticos primeiro. Cite somente IDs reprovados.', JSON.stringify({ failed, template: context.skill.templates[tipoTemplate] }));
+      feedback = await this.ai.json(this.ai.alvo('feedback', this.config.FEEDBACK_MODEL), schema, 'Redija feedback em português simples para o time de atendimento: o quê, onde e como corrigir. Resumo em até duas frases. Não repita as evidências nem cite ferramentas internas. Máximo três correções, críticos primeiro. Cite somente IDs reprovados.', JSON.stringify({ resumoVisual, failed, template: context.skill.templates[tipoTemplate] }));
     }
-    return ReviewResultSchema.parse({ aprovada: rubricaAprovada(itens), score: itens.filter(item => item.resposta === 'sim').length / itens.length, itens, feedback });
+    return ReviewResultSchema.parse({ modo: this.config.AI_MODE === 'openai' ? 'visual' : 'simulado', aprovada: rubricaAprovada(itens), score: itens.filter(item => item.resposta === 'sim').length / itens.length, itens, feedback });
   }
 }
 function instruction(item: RubricaItem): string {
-  if (/selo|sobrep|geometria|template|margem/i.test(item.pergunta)) return `Reposicione os elementos nas caixas exatas do template, sem cortes nem sobreposição. Verifique: ${item.pergunta}`;
-  if (/texto|portugu|disclaimer|leg[ií]ve/i.test(item.pergunta)) return `Renderize os textos exatos da Skill via SVG, com 22 px mínimos no disclaimer e contraste legível. Verifique: ${item.pergunta}`;
-  return `Corrija a camada fotográfica conforme a Skill, preservando o enquadramento e a grade. Verifique: ${item.pergunta}`;
+  if (/selo|sobrep|geometria|template|margem/i.test(item.pergunta)) return 'Ajuste as posições e margens para evitar cortes e sobreposição entre os elementos.';
+  if (/texto|portugu|disclaimer|leg[ií]ve/i.test(item.pergunta)) return 'Confira o texto obrigatório e ajuste tamanho e contraste para facilitar a leitura.';
+  return 'Confira este critério na imagem e ajuste o elemento correspondente antes de reenviar.';
 }

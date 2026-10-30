@@ -49,7 +49,7 @@ function CustosPanel() {
       <CustoSecao titulo="Classificadora" descricao="Triagem e outras chamadas de texto" itens={data.itens.filter(item => item.tipo === 'texto')} />
       <CustoSecao titulo="Geração de imagem" descricao="Modelos usados para criar artes" itens={data.itens.filter(item => item.tipo === 'imagem')} imagem />
     </div>
-    <p className="muted cost-note">Apenas chamadas reais são contabilizadas. Custo em real = custo em dólar × {data.cotacaoUsdBrl.toLocaleString('pt-BR')} (variável <code>USD_BRL</code> do .env). Preços por 1M de tokens: Jev US$ 0,042 de entrada; Luna (Decisions API) US$ 0,10 de entrada; saída gratuita nos dois. Modelos de imagem: texto de entrada US$ 5, imagem de entrada US$ 8 e imagem gerada US$ 30.</p>
+    <p className="muted cost-note">Apenas chamadas reais são contabilizadas. Custo em real = custo em dólar × {data.cotacaoUsdBrl.toLocaleString('pt-BR')} (variável <code>USD_BRL</code> do .env). Preços por 1M de tokens: Jev US$ 0,042 de entrada; Luna na Decisions API US$ 0,10 de entrada, ambos com saída gratuita; Luna em texto US$ 0,10 de entrada e US$ 0,50 de saída. Modelos de imagem: texto de entrada US$ 5, imagem de entrada US$ 8 e imagem gerada US$ 30.</p>
     <div className="cost-reset"><button className="button outline" onClick={() => setConfirmando(true)} disabled={zerando || data.total.chamadas === 0}><Icon name="undo" />Zerar contador</button></div>
     {confirmando && <ZerarCustosModal busy={zerando} onClose={() => setConfirmando(false)} onConfirm={() => void zerar()} />}
   </>;
@@ -137,12 +137,17 @@ function ModelosPanel() {
           </label>
           <label><span className="sr-only">Esforço · {info.label}</span>
             {efforts.length ? <select value={escolha.effort ?? ''} onChange={e => setDraft({ ...draft, [s]: { ...escolha, effort: e.target.value as IaEffort } })}>
-              {efforts.map(effort => <option key={effort} value={effort}>{catalogo?.tipo === 'imagem' ? `Qualidade ${IA_EFFORT_LABELS[effort].toLowerCase()}` : `Esforço ${IA_EFFORT_LABELS[effort].toLowerCase()}`}</option>)}
-            </select> : <select disabled value=""><option value="">{catalogo?.tipo === 'imagem' ? 'Qualidade não se aplica' : 'Esforço não se aplica'}</option></select>}
+              {efforts.map(effort => <option key={effort} value={effort}>{s.startsWith('imagem_') ? `Qualidade ${IA_EFFORT_LABELS[effort].toLowerCase()}` : `Esforço ${IA_EFFORT_LABELS[effort].toLowerCase()}`}</option>)}
+            </select> : <select disabled value=""><option value="">{s.startsWith('imagem_') ? 'Qualidade não se aplica' : 'Esforço não se aplica'}</option></select>}
           </label>
         </div>;
       })}
     </div>)}
-    <p className="muted cost-note">Padrões vêm do .env (<code>JEV_MODEL</code>, <code>REVIEW_MODEL</code>, <code>FEEDBACK_MODEL</code>, <code>IMAGE_MODEL</code>). A triagem usa só o Jev por enquanto; Luna na triagem exige implementar o classificador via Decisions API.</p>
+    <div className="reading-map"><div className="eyebrow">Como a demanda é lida</div><dl>
+      <div><dt>Regras do sistema</dt><dd>Preço com valor exato, telefone, datas, empresa citada no cadastro e fotos de antes e depois. Sem IA, sem custo.</dd></div>
+      <div><dt>Leitura do briefing (texto)</dt><dd>Preço escrito de outro jeito, CTA, título, modelo da foto, descrição do antes e depois, tom e restrições. Não escolhe layout.</dd></div>
+      <div><dt>Classificadora (Decisions API ou Jev)</dt><dd>Empresa, procedimento, tipo de arte e agente, sempre entre opções fechadas e com probabilidade. Só a Luna olha as imagens anexadas. Não escreve texto.</dd></div>
+    </dl><p className="muted">Com a leitura desligada, a classificadora categoriza os trechos, mas não extrai valores.</p></div>
+    <p className="muted cost-note">Padrões vêm do .env (<code>CLASSIFIER_PROVIDER</code>, <code>CLASSIFIER_MODEL</code>, <code>BRIEFING_MODEL</code>, <code>REVIEW_MODEL</code>, <code>FEEDBACK_MODEL</code>, <code>IMAGE_MODEL</code>). “Simulado” roda localmente, sem chamada de IA.</p>
   </section>;
 }

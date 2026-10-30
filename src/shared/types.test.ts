@@ -199,7 +199,7 @@ describe('loadConfig', () => {
     expect(loadConfig({})).toEqual({
       IMAGE_ENGINE_MODE: 'mock', AI_MODE: 'mock', CLASSIFIER_PROVIDER: 'openai', MOCK_REJECT_RATE: 0.35,
       JEV_BASE_URL: 'https://api.typesafe.ai', JEV_MODEL: 'jev-latest', JEV_PRICE_INPUT_USD_PER_MTOK: 0.042, JEV_PRICE_OUTPUT_USD_PER_MTOK: 0, USD_BRL: 5.5,
-      CLASSIFIER_MODEL: 'gpt-6-luna-decisions', IMAGE_MODEL: 'gpt-image-2', REVIEW_MODEL: 'gpt-6-luna-decisions',
+      CLASSIFIER_MODEL: 'gpt-6-luna-decisions', BRIEFING_MODEL: 'gpt-6-luna', IMAGE_MODEL: 'gpt-image-2', REVIEW_MODEL: 'gpt-6-luna',
       FEEDBACK_MODEL: 'gpt-6.1-terra', IMAGE_SIZE: '1080x1350', MAX_HOPS: 5, MAX_DIRECTOR_ATTEMPTS: 3,
       DIRECTOR_TICK_MS: 15000, PRODUCTION_TIMEOUT_MS: 120000, PRODUCAO_MANUAL_VAN_GOGH: true, ACERVO_HEARTBEAT_MS: 30000,
       ACERVO_AUTOFILL: true, PORT: 8787, ACERVO_DIR: './acervo', BRAIN_DIR: './brain', DATA_DIR: './data',

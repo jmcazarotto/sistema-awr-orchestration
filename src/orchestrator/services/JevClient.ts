@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { OrchestratorConfig } from '../../shared/types';
 import { OrchestratorError } from '../core/errors';
+import type { Classificadora, RespostaDecisao } from './DecisionsClient';
 
 const probability = z.number().min(0).max(1);
 export const JevResponseSchema = z.object({
@@ -12,9 +13,9 @@ export type JevQuestions = Record<string, { type: 'choice'; instructions: string
 export interface JevClientOptions { fetch?: typeof fetch; now?: () => number; sleep?: (ms: number) => Promise<void> }
 
 /** HTTP only. Credentials and upstream bodies never cross the error boundary. */
-export class JevClient {
+export class JevClient implements Classificadora {
   constructor(private readonly config: OrchestratorConfig, private readonly apiKey: string, private readonly options: JevClientOptions = {}) {}
-  async ask(state: string, questions: JevQuestions) {
+  async ask(state: string, questions: JevQuestions): Promise<RespostaDecisao> {
     const now = this.options.now ?? (() => performance.now());
     const start = now();
     try {
@@ -37,9 +38,9 @@ export class JevClient {
             || Object.keys(question.criteria).some(key => !Object.hasOwn(answer.probabilities, key))
             || Object.keys(answer.probabilities).some(key => !Object.hasOwn(question.criteria, key))) throw new Error('invalid choice');
         }
-        return { ...result, latenciaMs: Math.max(0, now() - start) };
+        return { ...result, predicados: {}, latenciaMs: Math.max(0, now() - start) };
       }
       throw new Error('upstream');
-    } catch { throw new OrchestratorError('UPSTREAM_ERROR', 'Falha no classificador Jev.', 502); }
+    } catch { throw new OrchestratorError('UPSTREAM_ERROR', 'Falha no classificador de IA.', 502); }
   }
 }

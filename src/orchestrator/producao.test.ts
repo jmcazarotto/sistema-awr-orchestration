@@ -74,7 +74,7 @@ describe('produção manual do Van Gogh', () => {
       const jpg = await sharp({ create: { width: 1080, height: 1350, channels: 3, background: '#E6DDCF' } }).jpeg().toBuffer();
       for (const ref of (await f.app.marcas.get('royal_face'))!.referencias) await f.storage.write(ref.arquivo, jpg);
       await f.storage.write('_marcas/royal_face/logo-claro.png', await sharp({ create: { width: 400, height: 160, channels: 4, background: '#000000' } }).png().toBuffer());
-      await f.app.empresas.upsert({ ...(await f.app.empresas.get('royal_face'))!, logos: { claro: '_marcas/royal_face/logo-claro.png', escuro: null } });
+      await f.app.empresas.upsert({ ...(await f.app.empresas.get('royal_face'))!, galeriaLogos: [{ arquivo: '_marcas/royal_face/logo-claro.png', fundo: 'claro', principal: true }], logos: { claro: '_marcas/royal_face/logo-claro.png', escuro: null } });
       await f.app.ia.salvarModelos({ ...f.app.ia.modelos(), imagem_van_gogh: { modelo: 'gpt-image-2', effort: 'medio' } });
       const criada = await f.app.submitDemand({ briefing: 'Preenchimento labial banco de imagem para a Royal Face Castanhal com 6x de R$ 99,90' }); await f.bus.whenIdle();
       await f.app.produzir(criada.id); await f.bus.whenIdle();

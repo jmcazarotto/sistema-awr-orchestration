@@ -26,8 +26,36 @@ export function ArtPreview({path,large=false}:{path?:string;large?:boolean}) {
   return <img className={`art-preview ${large?'large':''}`} src={mock?mockImage(path):imageUrl(path)} alt="Arte gerada para revisão" onError={()=>setFailed(true)}/>;
 }
 export function Rubric({review}:{review?:ReviewResult}) {
-  if(!review)return <p className="muted">Aguardando a revisão visual do Diretor.</p>;
-  return <div className="rubric"><div className="section-heading"><h2>Rubrica do Diretor</h2><Badge active={review.aprovada}>{Math.round(review.score*100)}% · {review.aprovada?'Aprovada':'Revisar'}</Badge></div><div className="score-track"><span style={{width:`${review.score*100}%`}}/></div>{review.itens.map(item=><div className={`rubric-item ${item.resposta==='nao'?'failed':''}`} key={item.id}><span className="rubric-answer">{item.resposta==='sim'?'✓':'×'}</span><div><strong>{item.id} <span className="muted">· {item.severidade==='critico'?'Crítico':'Normal'}</span></strong><p>{item.evidencia}</p></div><Badge active={item.resposta==='sim'}>{item.resposta==='sim'?'Sim':'Não'}</Badge></div>)}{review.feedback.resumo&&<p className="review-summary">{review.feedback.resumo}</p>}{review.feedback.correcoes.map(c=><p className="notice" key={c.itemId}>{c.itemId}: {c.instrucao}</p>)}</div>;
+  if(!review)return <p className="muted">Aguardando a análise do Diretor.</p>;
+  const legacyMock = review.itens.some(item => item.evidencia.startsWith('Composição mock gerada por SVG'));
+  const simulated = review.modo === 'simulado' || (!review.modo && legacyMock);
+  const failed = review.itens.filter(item => item.resposta === 'nao');
+  const passed = review.itens.filter(item => item.resposta === 'sim');
+  const summary = simulated
+    ? 'Revisão simulada: composição, legibilidade e fotos precisam de conferência humana.'
+    : review.feedback.resumo;
+  const renderItem = (item: ReviewResult['itens'][number]) => {
+    const correction = review.feedback.correcoes.find(c => c.itemId === item.id);
+    const generic = item.evidencia.startsWith('Composição mock gerada por SVG') || item.evidencia === 'Critério não verificado visualmente nesta simulação.';
+    return <div className={`rubric-item ${item.resposta==='nao'?'failed':''}`} key={item.id}>
+      <span className="rubric-answer" aria-hidden="true">{item.resposta==='sim'?'✓':'×'}</span>
+      <div><strong>{item.criterio || `Critério ${item.id}`}</strong>
+        <small className="muted rubric-meta">{item.id} · {item.severidade==='critico'?'Obrigatório':'Recomendado'}</small>
+        {!generic && <p>{item.evidencia}</p>}
+        {correction && <p className="rubric-correction"><b>Como ajustar:</b> {correction.instrucao}</p>}
+      </div>
+    </div>;
+  };
+  return <div className="rubric">
+    <div className="section-heading"><h2>Análise do Diretor</h2><Badge active={!simulated && review.aprovada}>{simulated?'Simulada':review.aprovada?'Aprovada':'Precisa de ajustes'}</Badge></div>
+    {summary && <p className="review-summary">{summary}</p>}
+    <p className="muted small-text">{simulated ? 'Resultado do teste' : 'Critérios atendidos'}: {passed.length} de {review.itens.length}{failed.length > 0 && ` · ${failed.length} com atenção`}</p>
+    {failed.length > 0 && <div className="rubric-attention"><h3>Pontos de atenção</h3>{failed.sort((a,b)=>Number(b.severidade==='critico')-Number(a.severidade==='critico')).map(renderItem)}</div>}
+    {passed.length > 0 && <details className="rubric-details"><summary>{simulated ? 'Ver critérios da simulação' : 'Ver critérios atendidos'} ({passed.length})</summary>
+      {simulated && <p className="muted small-text">Os resultados abaixo não comprovam uma avaliação visual.{legacyMock && ' Esta versão antiga não registrou o texto dos critérios.'}</p>}
+      {passed.map(renderItem)}
+    </details>}
+  </div>;
 }
 export function MessageFeed({messages,limit,includeActivity=false}:{messages:InboxMessage[];limit?:number;includeActivity?:boolean}) {
   const state=useAppState();const {mock}=useRuntime();const [open,setOpen]=useState<Record<string,boolean>>({});

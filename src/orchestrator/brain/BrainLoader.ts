@@ -133,7 +133,7 @@ export class BrainLoader {
     const composicoes = Object.fromEntries(headings.map((heading, index) => [heading[1]!, secao3.slice(heading.index! + heading[0].length, headings[index + 1]?.index ?? secao3.length).trim()]));
     const rubrica: RubricaItem[] = [...numberedSection(conteudo, 5).matchAll(/^- \[(M\d+)\]\[(critico|normal)\] (.+\?)\s*$/gm)].map(match => ({ id: match[1]!, severidade: match[2] === 'critico' ? 'critico' : 'normal', pergunta: match[3]! }));
     return { id, label: String(meta.label ?? id), versao: Number(meta.versao ?? 1), atualizadoEm: String(meta.atualizado_em ?? ''), empresas: Array.isArray(meta.empresas) ? meta.empresas.map(String) : [id],
-      skillFile: `skills/marcas/${id}/marca.skill.md`, conteudo, visualSystem: visualSystem ?? '', rubrica, referencias: indice ? parseReferencias(indice, raiz) : [],
+      skillFile: `skills/marcas/${id}/marca.skill.md`, conteudo, visualSystem: visualSystem ?? '', rubrica, referencias: (await new ClientesRegistry(this.directory).list()).find(empresa => empresa.id === id)?.referencias ?? (indice ? parseReferencias(indice, raiz) : []),
       promptMarca: /```prompt\r?\n([\s\S]*?)```/.exec(numberedSection(conteudo, 4))?.[1]?.trim() ?? '', composicoes, aprendizados: parseLearnings(conteudo) };
   }
   async listMarcas(): Promise<LoadedMarca[]> {

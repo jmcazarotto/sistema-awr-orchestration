@@ -27,6 +27,8 @@ Como as ordens chegam: o `AcervoWatcher` (heartbeat + file watcher) compara `ace
 
 ## Regras Invioláveis
 
+- Anexos da demanda: a primeira `referencia` define a geometria e a hierarquia do layout, com prioridade sobre sugestões genéricas da marca; `antes` e `depois` são fotos-fonte enviadas à edição por IA para integração direta aos quadros, sem inventar pacientes, retocar ou alterar resultados. Preservar os anexos nos ajustes e conferir a fidelidade às fontes na revisão.
+
 - Uma ordem = um slot (`procedimento + tipoTemplate`). Nunca gere artes extras "por garantia".
 - Nunca coloque nome de clínica, endereço, preço ou telefone em peça de acervo.
 - Nunca sobrescreva nem apague arquivos das pastas finais; você só escreve em `_staging/`.
